@@ -98,26 +98,47 @@ pub fn genesis(dim: usize, group_size: usize) -> TernaryMatrix {
 }
 
 /// Block-sparse matrix multiplication with ternary-quantized weights.
-/// y = x @ W, where W is ternary-quantized.
-pub fn ternary_matmul(x: &[f32], codes: &[u8], scales: &[f32], dim: usize, group_size: usize) -> Vec<f32> {
+/// y = x @ W, where W is ternary-quantized, x is dim×dim.
+/// Each 4-byte uint32 word packs 16 ternary codes (2 bits each).
+pub fn ternary_matmul(
+    x: &[f32],
+    codes: &[u8],
+    scales: &[f32],
+    dim: usize,
+    group_size: usize,
+) -> Vec<f32> {
     let n = dim * dim;
     let mut y = vec![0.0f32; n];
+    let words_per_row = dim.div_ceil(16);
+
     for i in 0..dim {
+        let x_row_base = i * dim;
         for j in 0..dim {
             let mut acc = 0.0f32;
-            let word_idx = j / 16;
-            let words = &codes[word_idx * 4..];
-            if words.len() < 4 { continue; }
-            let word = u32::from_le_bytes([words[0], words[1], words[2], words[3]]);
+            // Iterate over 16-element word blocks in row j of W
+            for w in 0..words_per_row {
+                let k = w * 16;
+                // Word at flat position (j, k) in row-major
+                let word_offset = ((j * dim) / 16 + w) * 4;
+                if word_offset + 4 > codes.len() {
+                    break;
+                }
+                let word_bytes = &codes[word_offset..word_offset + 4];
+                let word = u32::from_le_bytes([
+                    word_bytes[0],
+                    word_bytes[1],
+                    word_bytes[2],
+                    word_bytes[3],
+                ]);
 
-            for k in (0..dim).step_by(16) {
-                let g = (j * dim + k) / group_size;
+                let flat_idx = j * dim + k;
+                let g = flat_idx / group_size;
                 let scale = scales[g];
-                let x_idx = i * dim + k;
-                for t in 0..16 {
-                    if k + t >= dim { break; }
+
+                let limit = 16.min(dim - k);
+                for t in 0..limit {
                     let code = ((word >> (2 * t)) & 0x03) as i32 - 1;
-                    acc += x[x_idx + t] * (code as f32 * scale);
+                    acc += x[x_row_base + k + t] * (code as f32 * scale);
                 }
             }
             y[i * dim + j] = acc;
@@ -137,6 +158,38 @@ mod tests {
         assert_eq!(m1.weights, m2.weights);
         assert_eq!(m1.codes, m2.codes);
         assert_eq!(m1.scales, m2.scales);
+    }
+
+    #[test]
+    fn ternary_matmul_small_is_deterministic() {
+        let m = genesis(16, 4);
+        let x = vec![1.0f32; 16 * 16];
+        let y1 = ternary_matmul(&x, &m.codes, &m.scales, m.dim, m.group_size);
+        let y2 = ternary_matmul(&x, &m.codes, &m.scales, m.dim, m.group_size);
+        assert_eq!(y1, y2, "matmul should be deterministic");
+        assert_eq!(y1.len(), 16 * 16, "output should be dim×dim");
+    }
+
+    #[test]
+    fn ternary_matmul_different_inputs_produce_different_results() {
+        let m = genesis(16, 4);
+        let x1 = vec![1.0f32; 16 * 16];
+        let x2 = vec![0.5f32; 16 * 16];
+        let y1 = ternary_matmul(&x1, &m.codes, &m.scales, m.dim, m.group_size);
+        let y2 = ternary_matmul(&x2, &m.codes, &m.scales, m.dim, m.group_size);
+        assert_ne!(y1, y2, "different inputs should produce different outputs");
+    }
+
+    #[test]
+    fn ternary_matmul_larger_dim() {
+        // Test with same dim as genesis default (256)
+        let m = genesis(64, 32);
+        let x = vec![0.5f32; 64 * 64];
+        let y = ternary_matmul(&x, &m.codes, &m.scales, m.dim, m.group_size);
+        assert_eq!(y.len(), 64 * 64);
+        // Should have non-zero values (ternary × fp32 → non-zero)
+        let max_val = y.iter().cloned().fold(0.0f32, f32::max);
+        assert!(max_val > 0.0, "output should have non-zero values");
     }
 
     #[test]
