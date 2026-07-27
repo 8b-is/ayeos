@@ -2,6 +2,8 @@
 
 **Ternary matrix inference daemon. Part of the 8b-is mesh.**
 
+**[GitHub Pages](https://8b-is.github.io/ayeos/)** | [CRATE](https://crates.io/) | [MEMNET](https://github.com/8b-is/8b-public-documents/tree/main/ayeos)
+
 ```
 KERNEL8 — MATRIX — AYEOS SPEC — VAKED — {n+-1-<△>}
 ```
