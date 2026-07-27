@@ -118,7 +118,6 @@ pub fn ternary_matmul(
             // Iterate over 16-element word blocks in row j of W
             for w in 0..words_per_row {
                 let k = w * 16;
-                // Word at flat position (j, k) in row-major
                 let word_offset = ((j * dim) / 16 + w) * 4;
                 if word_offset + 4 > codes.len() {
                     break;
@@ -143,6 +142,50 @@ pub fn ternary_matmul(
             }
             y[i * dim + j] = acc;
         }
+    }
+    y
+}
+
+/// Matrix-vector product: y = x @ W (row vector × ternary matrix).
+/// x is a vector of length dim, W is dim×dim ternary-quantized.
+/// Returns a vector of length dim.
+pub fn ternary_matvec(
+    x: &[f32],
+    codes: &[u8],
+    scales: &[f32],
+    dim: usize,
+    group_size: usize,
+) -> Vec<f32> {
+    let mut y = vec![0.0f32; dim];
+    let words_per_row = dim.div_ceil(16);
+
+    for j in 0..dim {
+        let mut acc = 0.0f32;
+        for w in 0..words_per_row {
+            let k = w * 16;
+            let word_offset = ((j * dim) / 16 + w) * 4;
+            if word_offset + 4 > codes.len() {
+                break;
+            }
+            let word_bytes = &codes[word_offset..word_offset + 4];
+            let word = u32::from_le_bytes([
+                word_bytes[0],
+                word_bytes[1],
+                word_bytes[2],
+                word_bytes[3],
+            ]);
+
+            let flat_idx = j * dim + k;
+            let g = flat_idx / group_size;
+            let scale = scales[g];
+
+            let limit = 16.min(dim - k);
+            for t in 0..limit {
+                let code = ((word >> (2 * t)) & 0x03) as i32 - 1;
+                acc += x[k + t] * (code as f32 * scale);
+            }
+        }
+        y[j] = acc;
     }
     y
 }
@@ -206,6 +249,22 @@ mod tests {
                 recovered[i].abs() < 1e-5 ||
                 (recovered[i] - scale).abs() < 1e-5,
                 "weight[{}] = {} not in {{{}, 0, {}}}", i, recovered[i], -scale, scale
+            );
+        }
+    }
+
+    #[test]
+    fn ternary_matvec_matches_matmul_row() {
+        let m = genesis(32, 16);
+        let x = vec![0.7f32; 32];
+        let y_vec = ternary_matvec(&x, &m.codes, &m.scales, m.dim, m.group_size);
+        assert_eq!(y_vec.len(), 32);
+        let x_mat = x.repeat(32);
+        let y_mat = ternary_matmul(&x_mat, &m.codes, &m.scales, m.dim, m.group_size);
+        for j in 0..32 {
+            assert_eq!(
+                y_vec[j], y_mat[j],
+                "matvec[{j}] should equal matmul[0][{j}] when x is tiled"
             );
         }
     }
