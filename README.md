@@ -17,6 +17,8 @@ KERNEL8 — MATRIX — AYEOS SPEC — VAKED — {n+-1-<△>}
 | Coord | [vaked](https://github.com/8b-is/vaked) | Capability-graph language, flake-native |
 | Viz | [mlx-quant-viz](https://github.com/8b-is/mlx-quant-viz) | Interactive matrix visualization, LINOSV seed |
 | **Mesh** | ayeOS (this repo) | MEMNET protocol, daemon, matrix generation |
+| **Client** | [HF-MAC](https://github.com/8b-is/hf-mac) | Native macOS app — ecosystem dashboard, capsule list, matvec inference |
+| **Training** | `scripts/train_quantal.py` | BitNet b1.58 QAT → ayeOS capsule JSON |
 
 ## What it does
 
@@ -54,8 +56,27 @@ The seed is a conversation about consciousness, wave memory, getting fired for t
 
 ```bash
 cargo build --release
-cargo test   # 4/4 pass
+cargo test   # 10/10 pass
+
+# Train a quantal model and serve it
+python3 scripts/train_quantal.py --model Qwen/Qwen2.5-0.5B --data your_data.jsonl
+./target/release/ayeosd          # then: load trained.ayeos.json mymodel
+# HF-MAC can now list & fetch the capsule over MEMNET
 ```
+
+## Ecosystem alignment
+
+ayeOS is the ternary inference spine of the **HF-MAC{-1,0,+1}** stack:
+
+```
+HF-MAC (macOS app) ←→ ayeOSd (MEMNET :9876) ←→ train_quantal.py
+     ↕                      ↕
+  entheai agent          MLX-QUANT Metal GPU
+  MEM8 wave memory       kernel8 CPU hearth
+  HF Accelerate MPS      deterministic LINOSV seed
+```
+
+All layers share the same ternary creed: {-1, 0, +1}. No maybe. Real tokens/sec.
 
 ## License
 
