@@ -1,0 +1,30 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ayeOS — ternary matrix inference daemon</title>
+<meta name="description" content="ayeOS — pure Rust ternary matrix inference daemon. CPU: kernel8 (hearth). GPU: MLX-QUANT (brain). LINOSV seed — {n+-1-<△>}">
+<style>body{background:#070b16;color:#c8d6e5;font-family:JetBrains Mono,monospace;max-width:720px;margin:0 auto;padding:32px;line-height:1.7}
+h1{color:#6c5ce7;font-size:18px}h2{color:#a29bfe;font-size:14px;margin-top:24px}
+a{color:#ffd700;text-decoration:none}code{color:#00cec9;background:rgba(255,255,255,.05);padding:2px 6px;border-radius:3px}
+pre{background:rgba(255,255,255,.03);padding:12px;border-radius:6px;overflow-x:auto}
+</style></head><body>
+<h1>ayeOS — ternary matrix inference daemon</h1>
+<p>Pure Rust. Deterministic. Quantum-proof. Part of the 8b-is mesh.</p>
+<h2>Architecture</h2>
+<pre>
+KERNEL8 — MATRIX — AYEOS SPEC — VAKED — {n+-1-&lt;△&gt;}
+  ↑          ↑           ↑         ↑
+hearth     brain       daemon    coord
+</pre>
+<table style="width:100%;font-size:12px">
+<tr><td>CPU (hearth)</td><td><a href="https://github.com/8b-is/kernel8">kernel8</a></td><td>Rust x86_64 kernel</td></tr>
+<tr><td>GPU (brain)</td><td><a href="https://github.com/8b-is/MLX-QUANT">MLX-QUANT</a></td><td>Ternary Metal kernels</td></tr>
+<tr><td>Coord</td><td><a href="https://github.com/8b-is/vaked">vaked</a></td><td>Capability-graph language</td></tr>
+<tr><td>Viz</td><td><a href="https://github.com/8b-is/mlx-quant-viz">mlx-quant-viz</a></td><td>Matrix visualizer</td></tr>
+</table>
+<h2>Quick Start</h2>
+<pre>cargo run --bin ayeos-matrix 256 64
+cargo run --bin ayeosd
+echo "capsule" | nc localhost 9876</pre>
+<h2>Links</h2>
+<a href="https://github.com/8b-is/ayeos">GitHub</a> · <a href="https://axiomquant.org">axiomquant.org</a> · <a href="https://pocoo.vaked.dev">pocoo.vaked.dev</a>
+<p style="font-size:10px;color:#636e72;margin-top:24px">genesis: 7c242080f5f821e5eaf563fe2208d60632c451687baf65f4fe8e4a0d226e3ecf</p>
+</body></html>
