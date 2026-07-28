@@ -1,6 +1,5 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
@@ -47,20 +46,24 @@ fn main() {
     println!("MEMNET node: {}:{} ({})", node.host, node.port, node.address.role);
     println!();
 
-    let listener = TcpListener::bind(format!("{}:{}", node.host, node.port))
-        .expect("Failed to bind MEMNET port");
-    // Allow immediate reuse after restart (TIME_WAIT avoidance).
-    let fd = listener.as_raw_fd();
-    let opt: libc::c_int = 1;
-    unsafe {
-        libc::setsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_REUSEADDR,
-            &opt as *const _ as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        );
-    }
+    let listener = {
+        let addr: std::net::SocketAddr =
+            format!("{}:{}", node.host, node.port).parse().expect("bad addr");
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )
+        .expect("socket creation failed");
+        socket.set_reuse_address(true).expect("set_reuse_address");
+        socket.set_nonblocking(true).ok();
+        socket.bind(&addr.into()).expect("Failed to bind MEMNET port");
+        socket
+            .listen(128)
+            .expect("Failed to listen on MEMNET port");
+        socket.set_nonblocking(false).ok();
+        TcpListener::from(socket)
+    };
     println!("MEMNET listening on :{}", node.port);
     println!("commands: matrix, capsule [name], list, load <path>, stats, seed, help, quit");
     println!();
@@ -163,8 +166,8 @@ fn main() {
             cmd => println!("unknown: {cmd}"),
         }
     }
-    // Stdio stdin closed; keep the daemon running until killed.
-    loop { thread::sleep(std::time::Duration::from_secs(3600)); }
+    // Stdio stdin closed; park the main thread — TCP listener keeps serving.
+    loop { thread::park(); }
 }
 
 fn sparsity(m: &TernaryMatrix) -> f64 {

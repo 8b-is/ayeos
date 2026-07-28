@@ -305,16 +305,17 @@ def main():
 
     # -- Training loop
     print("5. training...")
-    n_batches = len(samples) // args.batch_size
     best_val_loss = float("inf")
+    avg_loss = 0.0
 
     for epoch in range(args.epochs):
         epoch_loss = 0.0
+        batch_count = 0
         t0 = time.time()
         idxs = np.random.permutation(len(samples))
 
-        for batch_idx in range(0, len(idxs), args.batch_size):
-            batch_idxs = idxs[batch_idx: batch_idx + args.batch_size]
+        for start in range(0, len(idxs), args.batch_size):
+            batch_idxs = idxs[start: start + args.batch_size]
             batch_texts = [samples[i] for i in batch_idxs]
 
             tokens = tokenize_fn(tokenizer, batch_texts, args.max_len)
@@ -330,11 +331,13 @@ def main():
 
             loss = train_step(model, inputs, targets, optimizer)
             epoch_loss += loss.item()
+            batch_count += 1
 
-            if (batch_idx // args.batch_size) % 10 == 0:
-                mx.metal.clear_cache()
+            if batch_count % 10 == 0:
+                if hasattr(mx.metal, 'clear_cache'):
+                    mx.metal.clear_cache()
 
-        avg_loss = epoch_loss / max(1, n_batches)
+        avg_loss = epoch_loss / max(1, batch_count)
         elapsed = time.time() - t0
 
         val_loss = None
@@ -375,7 +378,7 @@ def main():
             "binary": args.binary,
             "group_size": args.group_size,
             "epochs": args.epochs,
-            "final_loss": avg_loss,
+            "final_loss": best_val_loss if best_val_loss != float("inf") else avg_loss,
         },
     )
 
