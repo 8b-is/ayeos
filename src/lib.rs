@@ -1,7 +1,10 @@
+pub mod memnet;
 pub mod prng;
 pub mod quant;
-pub mod memnet;
 
-pub use quant::{TernaryMatrix, genesis, quantize, dequantize, ternary_matmul, ternary_matvec, ternary_matvec_auto, ternary_matvec_metal};
-pub use prng::{LINOSV_SEED, seed_hash, seed_hash_hex, Xoshiro128};
-pub use memnet::{MemnetAddress, MemnetNode, MemnetCapsule, genesis_node, relevance_score};
+pub use memnet::{genesis_node, relevance_score, MemnetAddress, MemnetCapsule, MemnetNode};
+pub use prng::{seed_hash, seed_hash_hex, Xoshiro128, LINOSV_SEED};
+pub use quant::{
+    dequantize, genesis, quantize, ternary_matmul, ternary_matvec, ternary_matvec_auto,
+    ternary_matvec_metal, TernaryMatrix,
+};

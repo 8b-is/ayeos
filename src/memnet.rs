@@ -29,8 +29,8 @@ pub struct MemnetNode {
 pub struct MemnetCapsule {
     pub capsule_id: String,
     pub address: MemnetAddress,
-    pub payload_type: String,  // "ternary_matrix", "scale_array", etc.
-    pub payload_b64: String,   // base64-encoded binary
+    pub payload_type: String, // "ternary_matrix", "scale_array", etc.
+    pub payload_b64: String,  // base64-encoded binary
     pub relevance_score: f32,
     pub timestamp: u64,
 }
@@ -65,7 +65,11 @@ pub fn relevance_score(capsule: &MemnetCapsule, node: &MemnetNode) -> f32 {
     }
     // Vector similarity (simplified: hash prefix match)
     if let (Some(cv), Some(nv)) = (&capsule.address.vector_hash, &node.address.vector_hash) {
-        let prefix_len = cv.chars().zip(nv.chars()).take_while(|(a, b)| a == b).count();
+        let prefix_len = cv
+            .chars()
+            .zip(nv.chars())
+            .take_while(|(a, b)| a == b)
+            .count();
         score += prefix_len as f32 * 0.5;
     }
     score.max(0.1) // never zero — everything has some relevance

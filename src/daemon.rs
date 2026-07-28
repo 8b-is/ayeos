@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use ayeos::{
-    genesis, genesis_node, MemnetAddress, MemnetCapsule, MemnetNode, TernaryMatrix,
-    seed_hash_hex, LINOSV_SEED,
+    genesis, genesis_node, seed_hash_hex, MemnetAddress, MemnetCapsule, MemnetNode, TernaryMatrix,
+    LINOSV_SEED,
 };
 
 /// A named ternary matrix loaded from a capsule.
@@ -43,12 +43,16 @@ fn main() {
     }]));
 
     let node = Arc::new(genesis_node("0.0.0.0", 9876));
-    println!("MEMNET node: {}:{} ({})", node.host, node.port, node.address.role);
+    println!(
+        "MEMNET node: {}:{} ({})",
+        node.host, node.port, node.address.role
+    );
     println!();
 
     let listener = {
-        let addr: std::net::SocketAddr =
-            format!("{}:{}", node.host, node.port).parse().expect("bad addr");
+        let addr: std::net::SocketAddr = format!("{}:{}", node.host, node.port)
+            .parse()
+            .expect("bad addr");
         let socket = socket2::Socket::new(
             socket2::Domain::IPV4,
             socket2::Type::STREAM,
@@ -57,10 +61,10 @@ fn main() {
         .expect("socket creation failed");
         socket.set_reuse_address(true).expect("set_reuse_address");
         socket.set_nonblocking(true).ok();
-        socket.bind(&addr.into()).expect("Failed to bind MEMNET port");
         socket
-            .listen(128)
-            .expect("Failed to listen on MEMNET port");
+            .bind(&addr.into())
+            .expect("Failed to bind MEMNET port");
+        socket.listen(128).expect("Failed to listen on MEMNET port");
         socket.set_nonblocking(false).ok();
         TcpListener::from(socket)
     };
@@ -118,7 +122,9 @@ fn main() {
                                 Ok(mat) => {
                                     let mut store = store.write().unwrap();
                                     // Replace if name exists, else append
-                                    if let Some(existing) = store.iter_mut().find(|m| m.name == name) {
+                                    if let Some(existing) =
+                                        store.iter_mut().find(|m| m.name == name)
+                                    {
                                         existing.matrix = mat;
                                         existing.name = name.to_string();
                                         println!("replaced capsule '{name}'");
@@ -167,7 +173,9 @@ fn main() {
         }
     }
     // Stdio stdin closed; park the main thread — TCP listener keeps serving.
-    loop { thread::park(); }
+    loop {
+        thread::park();
+    }
 }
 
 fn sparsity(m: &TernaryMatrix) -> f64 {
@@ -178,16 +186,31 @@ fn sparsity(m: &TernaryMatrix) -> f64 {
 fn print_matrix_stats(m: &TernaryMatrix) {
     println!("dim: {}×{}", m.dim, m.dim);
     println!("group_size: {}", m.group_size);
-    println!("weights: {} fp32 ({} bytes)", m.weights.len(), m.weights.len() * 4);
-    println!("codes:   {} packed bytes ({} uint32 words)", m.codes.len(), m.codes.len() / 4);
-    println!("scales:  {} f32 ({} bytes)", m.scales.len(), m.scales.len() * 4);
-    println!("ratio:   {:.2}x", (m.weights.len() * 4) as f64 / ((m.codes.len() + m.scales.len() * 4) as f64));
+    println!(
+        "weights: {} fp32 ({} bytes)",
+        m.weights.len(),
+        m.weights.len() * 4
+    );
+    println!(
+        "codes:   {} packed bytes ({} uint32 words)",
+        m.codes.len(),
+        m.codes.len() / 4
+    );
+    println!(
+        "scales:  {} f32 ({} bytes)",
+        m.scales.len(),
+        m.scales.len() * 4
+    );
+    println!(
+        "ratio:   {:.2}x",
+        (m.weights.len() * 4) as f64 / ((m.codes.len() + m.scales.len() * 4) as f64)
+    );
     println!("sparsity: {:.1}%", sparsity(m));
     println!("seed: {}", m.seed_hash);
 }
 
 fn print_capsule(m: &TernaryMatrix, _node: &MemnetNode, name: &str) {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     let capsule = MemnetCapsule {
         capsule_id: format!("{}-{}", name, m.seed_hash),
         address: MemnetAddress {
@@ -231,12 +254,8 @@ fn print_help() {
     println!("  quit            — shutdown");
 }
 
-fn handle_memnet(
-    mut stream: TcpStream,
-    store: &Arc<RwLock<Vec<NamedMatrix>>>,
-    node: &MemnetNode,
-) {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+fn handle_memnet(mut stream: TcpStream, store: &Arc<RwLock<Vec<NamedMatrix>>>, node: &MemnetNode) {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     let mut buf = [0u8; 1024];
     if let Ok(n) = stream.read(&mut buf) {
         let request = String::from_utf8_lossy(&buf[..n]);
@@ -298,7 +317,8 @@ fn handle_memnet(
                     let m = &nm.matrix;
                     let x = vec![1.0f32; dim.min(m.dim)];
                     // Use auto-select: NEON CPU for small, Metal GPU for large
-                    let y = ayeos::ternary_matvec_auto(&x, &m.codes, &m.scales, m.dim, m.group_size);
+                    let y =
+                        ayeos::ternary_matvec_auto(&x, &m.codes, &m.scales, m.dim, m.group_size);
                     let top5: Vec<f32> = y.iter().take(5).copied().collect();
                     serde_json::json!({
                         "matrix": nm.name,
@@ -306,7 +326,8 @@ fn handle_memnet(
                         "input_dim": x.len(),
                         "output_dim": y.len(),
                         "top5": top5,
-                    }).to_string()
+                    })
+                    .to_string()
                 } else {
                     r#"{"error":"no matrices loaded"}"#.into()
                 }
@@ -318,7 +339,8 @@ fn handle_memnet(
                 if let Some(nm) = s.first() {
                     let m = &nm.matrix;
                     let x = vec![1.0f32; dim.min(m.dim)];
-                    match ayeos::ternary_matvec_metal(&x, &m.codes, &m.scales, m.dim, m.group_size) {
+                    match ayeos::ternary_matvec_metal(&x, &m.codes, &m.scales, m.dim, m.group_size)
+                    {
                         Some(y) => {
                             let top5: Vec<f32> = y.iter().take(5).copied().collect();
                             serde_json::json!({
@@ -326,9 +348,12 @@ fn handle_memnet(
                                 "dim": m.dim,
                                 "backend": "metal",
                                 "top5": top5,
-                            }).to_string()
+                            })
+                            .to_string()
                         }
-                        None => r#"{"error":"Metal unavailable — install MLX: pip install mlx"}"#.into(),
+                        None => {
+                            r#"{"error":"Metal unavailable — install MLX: pip install mlx"}"#.into()
+                        }
                     }
                 } else {
                     r#"{"error":"no matrices loaded"}"#.into()

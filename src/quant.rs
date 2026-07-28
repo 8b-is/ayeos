@@ -1,6 +1,7 @@
+#![allow(clippy::needless_range_loop)]
 use serde::{Deserialize, Serialize};
 
-use crate::prng::{Xoshiro128, seed_hash};
+use crate::prng::{seed_hash, Xoshiro128};
 
 /// The ternary matrix — {n+-1-<△>} in the user's notation.
 /// n = weight count, -1/0/+1 = ternary states, △ = the quantization delta.
@@ -9,7 +10,7 @@ pub struct TernaryMatrix {
     pub dim: usize,
     pub group_size: usize,
     pub weights: Vec<f32>,
-    pub codes: Vec<u8>,  // packed 2-bit codes
+    pub codes: Vec<u8>, // packed 2-bit codes
     pub scales: Vec<f32>,
     pub seed_hash: String,
 }
@@ -25,19 +26,13 @@ impl TernaryMatrix {
         let matrices = v["matrices"]
             .as_array()
             .ok_or("no matrices array in capsule")?;
-        let first = matrices
-            .first()
-            .ok_or("empty matrices array")?;
+        let first = matrices.first().ok_or("empty matrices array")?;
 
         let dim = first["dim"].as_u64().ok_or("missing dim")? as usize;
         let in_features = first["in_features"].as_u64().ok_or("missing in_features")? as usize;
         let group_size = first["group_size"].as_u64().ok_or("missing group_size")? as usize;
-        let codes_arr = first["codes"]
-            .as_array()
-            .ok_or("missing codes array")?;
-        let scales_arr = first["scales"]
-            .as_array()
-            .ok_or("missing scales array")?;
+        let codes_arr = first["codes"].as_array().ok_or("missing codes array")?;
+        let scales_arr = first["scales"].as_array().ok_or("missing scales array")?;
 
         let codes: Vec<u8> = codes_arr
             .iter()
@@ -68,7 +63,7 @@ impl TernaryMatrix {
 pub fn quantize(weights: &[f32], group_size: usize) -> (Vec<u8>, Vec<f32>) {
     let n = weights.len();
     let groups = n / group_size;
-    let packed_words = (n + 15) / 16;
+    let packed_words = n.div_ceil(16);
     let mut codes = vec![0u8; packed_words * 4]; // uint32 words, but stored as u8
     let mut scales = vec![0.0f32; groups];
     let eps: f32 = 1e-7;
@@ -87,7 +82,9 @@ pub fn quantize(weights: &[f32], group_size: usize) -> (Vec<u8>, Vec<f32>) {
             let word_idx = (base + j) / 16;
             let mut word: u32 = 0;
             for k in 0..16 {
-                if j + k >= group_size { break; }
+                if j + k >= group_size {
+                    break;
+                }
                 let idx = base + j + k;
                 let shifted = (weights[idx] / scale).clamp(-1.0, 1.0).round() + 1.0;
                 let code = shifted as u32; // {0→-1, 1→0, 2→+1}
@@ -400,7 +397,8 @@ mod tests {
         // 16×16 matrix: 256 elements / 16 codes-per-word × 4 bytes = 64 code bytes
         // group_size=64: 256 / 64 = 4 scale groups
         let codes = vec![0u8; 64];
-        let json_str = format!(r#"{{
+        let json_str = format!(
+            r#"{{
             "matrices": [{{
                 "name": "test",
                 "dim": 16,
@@ -409,7 +407,8 @@ mod tests {
                 "codes": {codes:?},
                 "scales": [0.5, 0.3, 0.7, 0.2]
             }}]
-        }}"#);
+        }}"#
+        );
         let m = TernaryMatrix::from_capsule_json(&json_str).unwrap();
         assert_eq!(m.dim, 16);
         assert_eq!(m.group_size, 64);
@@ -434,10 +433,14 @@ mod tests {
             let g = i / gs;
             let scale = m.scales[g];
             assert!(
-                (recovered[i] + scale).abs() < 1e-5 ||
-                recovered[i].abs() < 1e-5 ||
-                (recovered[i] - scale).abs() < 1e-5,
-                "weight[{}] = {} not in {{{}, 0, {}}}", i, recovered[i], -scale, scale
+                (recovered[i] + scale).abs() < 1e-5
+                    || recovered[i].abs() < 1e-5
+                    || (recovered[i] - scale).abs() < 1e-5,
+                "weight[{}] = {} not in {{{}, 0, {}}}",
+                i,
+                recovered[i],
+                -scale,
+                scale
             );
         }
     }
@@ -455,7 +458,9 @@ mod tests {
             assert!(
                 diff < 1e-4,
                 "matvec[{j}] = {} should ≈ matmul[0][{j}] = {} (diff={})",
-                y_vec[j], y_mat[j], diff
+                y_vec[j],
+                y_mat[j],
+                diff
             );
         }
     }
