@@ -297,7 +297,8 @@ fn handle_memnet(
                 if let Some(nm) = s.first() {
                     let m = &nm.matrix;
                     let x = vec![1.0f32; dim.min(m.dim)];
-                    let y = ayeos::ternary_matvec(&x, &m.codes, &m.scales, m.dim, m.group_size);
+                    // Use auto-select: NEON CPU for small, Metal GPU for large
+                    let y = ayeos::ternary_matvec_auto(&x, &m.codes, &m.scales, m.dim, m.group_size);
                     let top5: Vec<f32> = y.iter().take(5).copied().collect();
                     serde_json::json!({
                         "matrix": nm.name,
@@ -306,6 +307,29 @@ fn handle_memnet(
                         "output_dim": y.len(),
                         "top5": top5,
                     }).to_string()
+                } else {
+                    r#"{"error":"no matrices loaded"}"#.into()
+                }
+            }
+            ("metal", dim_str) => {
+                // Force Metal GPU path via MLX-QUANT
+                let s = store.read().unwrap();
+                let dim = dim_str.parse::<usize>().unwrap_or(256);
+                if let Some(nm) = s.first() {
+                    let m = &nm.matrix;
+                    let x = vec![1.0f32; dim.min(m.dim)];
+                    match ayeos::ternary_matvec_metal(&x, &m.codes, &m.scales, m.dim, m.group_size) {
+                        Some(y) => {
+                            let top5: Vec<f32> = y.iter().take(5).copied().collect();
+                            serde_json::json!({
+                                "matrix": nm.name,
+                                "dim": m.dim,
+                                "backend": "metal",
+                                "top5": top5,
+                            }).to_string()
+                        }
+                        None => r#"{"error":"Metal unavailable — install MLX: pip install mlx"}"#.into(),
+                    }
                 } else {
                     r#"{"error":"no matrices loaded"}"#.into()
                 }
