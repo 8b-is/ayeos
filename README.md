@@ -18,6 +18,7 @@ KERNEL8 — MATRIX — AYEOS SPEC — VAKED — {n+-1-<△>}
 | Viz | [mlx-quant-viz](https://github.com/8b-is/mlx-quant-viz) | Interactive matrix visualization, LINOSV seed |
 | **Mesh** | ayeOS (this repo) | MEMNET protocol, daemon, matrix generation |
 | **Client** | [HF-MAC](https://github.com/8b-is/hf-mac) | Native macOS app — ecosystem dashboard, capsule list, matvec inference |
+| **Hardware** | [FLUG-OS](https://github.com/8b-is/FLUG-OS) | 802.11 packet-wave sampler for Flipper Zero (MATRIX decoder → ayeOS) |
 | **Training** | `scripts/train_quantal.py` | BitNet b1.58 QAT → ayeOS capsule JSON |
 
 ## What it does
