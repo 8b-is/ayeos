@@ -1,6 +1,6 @@
 [package]
 name = "ayeos"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "ayeOS — ternary matrix inference daemon. CPU: kernel8 (hearth). GPU: MLX-QUANT (brain). Coord: vaked (capability graph)."
 
