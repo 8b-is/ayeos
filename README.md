@@ -1,4 +1,4 @@
-# ayeOS
+# ayeOS · 0.2.0
 
 **Ternary matrix inference daemon. Part of the 8b-is mesh.**
 
