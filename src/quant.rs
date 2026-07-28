@@ -399,7 +399,7 @@ mod tests {
     fn from_capsule_json_loads_codes_and_scales() {
         // 16×16 matrix: 256 elements / 16 codes-per-word × 4 bytes = 64 code bytes
         // group_size=64: 256 / 64 = 4 scale groups
-        let mut codes = vec![0u8; 64];
+        let codes = vec![0u8; 64];
         let json_str = format!(r#"{{
             "matrices": [{{
                 "name": "test",
