@@ -287,6 +287,26 @@ fn handle_memnet(
                 serde_json::json!({ "capsules": names }).to_string()
             }
             ("ping", _) => "pong".into(),
+            ("matvec", dim_str) => {
+                // y = x @ W — run inference on the genesis matrix
+                let s = store.read().unwrap();
+                let dim = dim_str.parse::<usize>().unwrap_or(256);
+                if let Some(nm) = s.first() {
+                    let m = &nm.matrix;
+                    let x = vec![1.0f32; dim.min(m.dim)];
+                    let y = ayeos::ternary_matvec(&x, &m.codes, &m.scales, m.dim, m.group_size);
+                    let top5: Vec<f32> = y.iter().take(5).copied().collect();
+                    serde_json::json!({
+                        "matrix": nm.name,
+                        "dim": m.dim,
+                        "input_dim": x.len(),
+                        "output_dim": y.len(),
+                        "top5": top5,
+                    }).to_string()
+                } else {
+                    r#"{"error":"no matrices loaded"}"#.into()
+                }
+            }
             ("stats", _) => serde_json::to_string(&node.address).unwrap(),
             _ => format!(r#"{{"error":"unknown: {cmd}"}}"#),
         };
