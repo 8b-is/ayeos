@@ -14,6 +14,54 @@ pub struct TernaryMatrix {
     pub seed_hash: String,
 }
 
+impl TernaryMatrix {
+    /// Load a capsule from the train_quantal.py JSON format.
+    /// Expects a JSON object with a `"matrices"` array, each entry having
+    /// `dim`, `in_features`, `group_size`, `codes` (byte array), `scales`.
+    /// Returns the first matrix in the capsule (for now).
+    pub fn from_capsule_json(json_str: &str) -> Result<Self, String> {
+        let v: serde_json::Value =
+            serde_json::from_str(json_str).map_err(|e| format!("JSON parse: {e}"))?;
+        let matrices = v["matrices"]
+            .as_array()
+            .ok_or("no matrices array in capsule")?;
+        let first = matrices
+            .first()
+            .ok_or("empty matrices array")?;
+
+        let dim = first["dim"].as_u64().ok_or("missing dim")? as usize;
+        let in_features = first["in_features"].as_u64().ok_or("missing in_features")? as usize;
+        let group_size = first["group_size"].as_u64().ok_or("missing group_size")? as usize;
+        let codes_arr = first["codes"]
+            .as_array()
+            .ok_or("missing codes array")?;
+        let scales_arr = first["scales"]
+            .as_array()
+            .ok_or("missing scales array")?;
+
+        let codes: Vec<u8> = codes_arr
+            .iter()
+            .map(|v| v.as_u64().unwrap_or(0) as u8)
+            .collect();
+        let scales: Vec<f32> = scales_arr
+            .iter()
+            .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+            .collect();
+
+        // Reconstruct full weights via dequantize (for reference)
+        let weights = dequantize(&codes, &scales, dim.max(in_features), group_size);
+
+        Ok(TernaryMatrix {
+            dim: dim.max(in_features),
+            group_size,
+            weights,
+            codes,
+            scales,
+            seed_hash: "quantal-trained".into(),
+        })
+    }
+}
+
 /// Quantize weights to ternary {-1, 0, +1} per group.
 /// Mirrors mlx/backend/cpu/quantized.cpp + metal/kernels/ternary_quantized.h:
 /// scale = mean(|w|) per group, code = round(clamp(w/scale, -1, 1)) + 1.
@@ -233,6 +281,35 @@ mod tests {
         // Should have non-zero values (ternary × fp32 → non-zero)
         let max_val = y.iter().cloned().fold(0.0f32, f32::max);
         assert!(max_val > 0.0, "output should have non-zero values");
+    }
+
+    #[test]
+    fn from_capsule_json_loads_codes_and_scales() {
+        // 16×16 matrix: 256 elements / 16 codes-per-word × 4 bytes = 64 code bytes
+        // group_size=64: 256 / 64 = 4 scale groups
+        let mut codes = vec![0u8; 64];
+        let json_str = format!(r#"{{
+            "matrices": [{{
+                "name": "test",
+                "dim": 16,
+                "in_features": 16,
+                "group_size": 64,
+                "codes": {codes:?},
+                "scales": [0.5, 0.3, 0.7, 0.2]
+            }}]
+        }}"#);
+        let m = TernaryMatrix::from_capsule_json(&json_str).unwrap();
+        assert_eq!(m.dim, 16);
+        assert_eq!(m.group_size, 64);
+        assert_eq!(m.codes.len(), 64);
+        assert_eq!(m.scales.len(), 4);
+        assert!((m.scales[0] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn from_capsule_json_rejects_bad_json() {
+        let r = TernaryMatrix::from_capsule_json("not json");
+        assert!(r.is_err());
     }
 
     #[test]
