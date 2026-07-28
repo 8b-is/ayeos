@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
@@ -48,6 +49,18 @@ fn main() {
 
     let listener = TcpListener::bind(format!("{}:{}", node.host, node.port))
         .expect("Failed to bind MEMNET port");
+    // Allow immediate reuse after restart (TIME_WAIT avoidance).
+    let fd = listener.as_raw_fd();
+    let opt: libc::c_int = 1;
+    unsafe {
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_REUSEADDR,
+            &opt as *const _ as *const libc::c_void,
+            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+        );
+    }
     println!("MEMNET listening on :{}", node.port);
     println!("commands: matrix, capsule [name], list, load <path>, stats, seed, help, quit");
     println!();
@@ -150,6 +163,8 @@ fn main() {
             cmd => println!("unknown: {cmd}"),
         }
     }
+    // Stdio stdin closed; keep the daemon running until killed.
+    loop { thread::sleep(std::time::Duration::from_secs(3600)); }
 }
 
 fn sparsity(m: &TernaryMatrix) -> f64 {
