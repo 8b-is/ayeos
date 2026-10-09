@@ -1,4 +1,4 @@
-name: Blacksmith CI
+name: CI
 
 on:
   pull_request:
@@ -11,21 +11,15 @@ concurrency:
   group: blacksmith-ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions:
+  contents: read
+
 jobs:
   build_and_test:
     name: Rust build + test
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: useblacksmith/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: blacksmith-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: blacksmith-cargo-
+      - uses: actions/checkout@v4
 
       - name: Build
         run: cargo build --release
