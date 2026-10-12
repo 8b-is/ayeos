@@ -28,26 +28,60 @@ impl TernaryMatrix {
             .ok_or("no matrices array in capsule")?;
         let first = matrices.first().ok_or("empty matrices array")?;
 
-        let dim = first["dim"].as_u64().ok_or("missing dim")? as usize;
-        let in_features = first["in_features"].as_u64().ok_or("missing in_features")? as usize;
-        let group_size = first["group_size"].as_u64().ok_or("missing group_size")? as usize;
+        let dimension = |key: &str| -> Result<usize, String> {
+            first[key]
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .filter(|&n| n > 0)
+                .ok_or_else(|| format!("{key} must be a positive dimension"))
+        };
+        let dim = dimension("dim")?;
+        let in_features = dimension("in_features")?;
+        if dim != in_features {
+            return Err(
+                "rectangular capsules are not supported by the square matrix backend".into(),
+            );
+        }
+        let group_size = dimension("group_size")?;
+        let count = dim.checked_mul(dim).ok_or("matrix dimensions overflow")?;
+        if count % group_size != 0 {
+            return Err("group_size must divide the weight count".into());
+        }
+        let byte_count = count
+            .div_ceil(16)
+            .checked_mul(4)
+            .ok_or("packed byte count overflow")?;
         let codes_arr = first["codes"].as_array().ok_or("missing codes array")?;
         let scales_arr = first["scales"].as_array().ok_or("missing scales array")?;
-
+        if codes_arr.len() != byte_count || scales_arr.len() != count / group_size {
+            return Err("codes or scales length does not match matrix dimensions".into());
+        }
         let codes: Vec<u8> = codes_arr
             .iter()
-            .map(|v| v.as_u64().unwrap_or(0) as u8)
-            .collect();
+            .map(|v| {
+                v.as_u64()
+                    .and_then(|n| u8::try_from(n).ok())
+                    .ok_or_else(|| "codes must contain integer bytes in 0..=255".to_string())
+            })
+            .collect::<Result<_, _>>()?;
         let scales: Vec<f32> = scales_arr
             .iter()
-            .map(|v| v.as_f64().unwrap_or(0.0) as f32)
-            .collect();
-
-        // Reconstruct full weights via dequantize (for reference)
-        let weights = dequantize(&codes, &scales, dim.max(in_features), group_size);
+            .map(|v| {
+                v.as_f64()
+                    .map(|n| n as f32)
+                    .filter(|n| n.is_finite())
+                    .ok_or_else(|| "scales must contain finite f32 numbers".to_string())
+            })
+            .collect::<Result<_, _>>()?;
+        for i in 0..count {
+            if (codes[i / 4] >> (2 * (i % 4))) & 3 == 3 {
+                return Err("reserved ternary code 3 is invalid".into());
+            }
+        }
+        let weights = dequantize(&codes, &scales, dim, group_size);
 
         Ok(TernaryMatrix {
-            dim: dim.max(in_features),
+            dim,
             group_size,
             weights,
             codes,
@@ -414,6 +448,12 @@ mod tests {
         assert_eq!(m.group_size, 64);
         assert_eq!(m.codes.len(), 64);
         assert_eq!(m.scales.len(), 4);
+        assert_eq!(m.weights.len(), 256);
+        for (group, scale) in m.scales.iter().enumerate() {
+            assert!(m.weights[group * 64..(group + 1) * 64]
+                .iter()
+                .all(|w| *w == -*scale));
+        }
         assert!((m.scales[0] - 0.5).abs() < 1e-6);
     }
 
@@ -463,5 +503,39 @@ mod tests {
                 diff
             );
         }
+    }
+    #[test]
+    fn capsule_rejects_invalid_data_without_panicking() {
+        let valid = serde_json::json!({"matrices": [{"dim": 16, "in_features": 16,
+            "group_size": 64, "codes": vec![0;64], "scales": [0.5,0.5,0.5,0.5]}]});
+        let cases = vec![
+            ("dim", serde_json::json!(0)),
+            ("dim", serde_json::json!(u64::MAX)),
+            ("in_features", serde_json::json!(32)),
+            ("group_size", serde_json::json!(0)),
+            ("group_size", serde_json::json!(63)),
+            ("codes", serde_json::json!([])),
+            ("codes", serde_json::json!(vec![256; 64])),
+            ("codes", serde_json::json!(vec![-1; 64])),
+            ("codes", serde_json::json!(vec!["bad"; 64])),
+            ("codes", serde_json::json!(vec![255; 64])),
+            ("scales", serde_json::json!([])),
+            ("scales", serde_json::json!(["bad", 0.5, 0.5, 0.5])),
+            ("scales", serde_json::json!([1e100, 0.5, 0.5, 0.5])),
+        ];
+        let mut failures = Vec::new();
+        for (key, value) in cases {
+            let mut capsule = valid.clone();
+            capsule["matrices"][0][key] = value.clone();
+            let result =
+                std::panic::catch_unwind(|| TernaryMatrix::from_capsule_json(&capsule.to_string()));
+            if !matches!(result, Ok(Err(_))) {
+                failures.push(format!("{key}: {value}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "must reject without panic: {failures:?}"
+        );
     }
 }
