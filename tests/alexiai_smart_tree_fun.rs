@@ -11,7 +11,7 @@ fn test_alexiai_baseline_love_gate() {
 }
 
 pub fn steward_ayeos_kompress_ditto_stride(seed: i64) -> i64 {
-    let shifted = seed.wrapping_mul(585) ^ 528;
+    let shifted = seed.wrapping_mul(639) ^ 528;
     let rem = shifted.rem_euclid(3);
     let trit: i64 = (rem == 1) as i64 - (rem == 2) as i64;
     shifted.wrapping_add(trit * 432)
