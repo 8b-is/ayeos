@@ -12,6 +12,10 @@ path = "src/daemon.rs"
 name = "ayeos-matrix"
 path = "src/matrix_cli.rs"
 
+[[bin]]
+name = "ayeos-golden-probe"
+path = "src/bin/ayeos_golden_probe.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
