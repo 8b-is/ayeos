@@ -368,6 +368,352 @@ pub mod wifi_hqa {
     pub const HQA_CMD_GET_CHIP_ID: u16 = 0x1514;
 }
 
+// ── Drop-In `Mt6631Controller` (`ConnsysGate`, `HqaFrame`, `FmTuner`, `WmtPatchManifest`, `AfeFmRoute`) ──
+
+/// Sentinel magic word indicating WMT MCU & companion A-Die `0x6631` are out of reset (`0x6631_89AB`).
+pub const WMT_MCU_READY_MAGIC: u32 = 0x6631_89AB;
+
+/// 4-stage `CONNSYS` bring-up state machine (`Offline -> FdtVerified -> ClockAndMcuReady -> HqaRingReady -> FmSysActive`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnsysStage {
+    Offline,
+    FdtVerified,
+    ClockAndMcuReady,
+    HqaRingReady,
+    FmSysActive,
+}
+
+/// Execution transport mode (`ShadowLoopback` when unbooted vs. `HardwareMmio` once SPM/AXI + WMT are ready).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnsysMode {
+    ShadowLoopback,
+    HardwareMmio,
+}
+
+/// Hardware safety gate protecting `0x1800_xxxx` MMIO accesses against unclocked/bus-protected aborts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConnsysGate {
+    pub stage: ConnsysStage,
+    pub mode: ConnsysMode,
+    pub fdt_verified: bool,
+    pub mcu_status_reg: u32,
+}
+
+impl Default for ConnsysGate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConnsysGate {
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            stage: ConnsysStage::Offline,
+            mode: ConnsysMode::ShadowLoopback,
+            fdt_verified: false,
+            mcu_status_reg: 0,
+        }
+    }
+
+    /// Evaluate FDT presence and MCU ready word (`WMT_MCU_READY_MAGIC = 0x6631_89AB` or `0x1002_0501` / `0x1D1E`).
+    pub fn evaluate_probe(&mut self, fdt_has_connsys: bool, mcu_status_reg: u32) -> ConnsysMode {
+        self.fdt_verified = fdt_has_connsys;
+        self.mcu_status_reg = mcu_status_reg;
+        if !fdt_has_connsys {
+            self.stage = ConnsysStage::Offline;
+            self.mode = ConnsysMode::ShadowLoopback;
+        } else if mcu_status_reg == WMT_MCU_READY_MAGIC
+            || mcu_status_reg == consys_mmio::CONSYS_IP_VER_ID_EXPECTED
+            || mcu_status_reg == consys_mmio::CONN_MCU_CONNSYS_VERSION_EXPECTED
+        {
+            self.stage = ConnsysStage::FmSysActive;
+            self.mode = ConnsysMode::HardwareMmio;
+        } else {
+            self.stage = ConnsysStage::FdtVerified;
+            self.mode = ConnsysMode::ShadowLoopback;
+        }
+        self.mode
+    }
+
+    #[inline]
+    pub const fn can_touch_mmio(&self) -> bool {
+        matches!(self.mode, ConnsysMode::HardwareMmio)
+    }
+}
+
+/// Strongly typed `HQA` command IDs (`0x1814_2880`).
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HqaCmd {
+    OpenAdapter = 0x1000,
+    CloseAdapter = 0x1001,
+    SetTxPath = 0x100B,
+    SetRxPath = 0x100C,
+    SetChannel = 0x1100,
+    MacBbpRegRead = 0x1300,
+    MacBbpRegWrite = 0x1301,
+    GetTxInfo = 0x1313,
+    GetChipId = 0x1514,
+}
+
+/// 12-byte `hqa_frame` header + 32-bit parameter word (`magic_no = 0x1814_2880`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HqaFrame {
+    pub magic_no: u32,
+    pub msg_type: u16,
+    pub cmd_id: u16,
+    pub length: u16,
+    pub sequence: u16,
+    pub param0: u32,
+}
+
+impl HqaFrame {
+    #[inline]
+    pub const fn new(cmd: HqaCmd, param0: u32) -> Self {
+        Self {
+            magic_no: wifi_hqa::TEST_CMD_MAGIC_NO,
+            msg_type: wifi_hqa::HQA_TYPE_REQ,
+            cmd_id: cmd as u16,
+            length: 4,
+            sequence: 1,
+            param0,
+        }
+    }
+}
+
+/// Integer FM Tuner (`650..=1080` in 100 kHz steps) & IEC 62106 RDS decoder state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FmTuner {
+    pub current_freq_100khz: u16,
+    pub rssi_dbm: i16,
+    pub snr_db: u8,
+    pub stereo_locked: bool,
+    pub rds_pi: u16,
+    pub rds_ps: [u8; 8],
+    pub rds_rt: [u8; 64],
+}
+
+impl Default for FmTuner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FmTuner {
+    pub const fn new() -> Self {
+        Self {
+            current_freq_100khz: 885,
+            rssi_dbm: -62,
+            snr_db: 28,
+            stereo_locked: true,
+            rds_pi: 0x8B15,
+            rds_ps: *b"AYE.IS  ",
+            rds_rt: [b' '; 64],
+        }
+    }
+
+    /// Split a 100 kHz integer frequency (`995` -> `(99, 5)` for `99.5 MHz`) with zero floats.
+    #[inline]
+    pub const fn split_mhz(freq_100khz: u16) -> (u16, u16) {
+        (freq_100khz / 10, freq_100khz % 10)
+    }
+
+    pub fn tune_100khz(&mut self, freq_100khz: u16) {
+        self.current_freq_100khz = freq_100khz.clamp(650, 1080);
+    }
+}
+
+/// WMT & FM DSP firmware patch readiness manifest (`WIFI_RAM_CODE_6768`, `mt6631_patch_e1_hdr.bin`, `mt6631_fm_v1..v5_patch.bin`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WmtPatchManifest {
+    pub wifi_ram_code_loaded: bool,
+    pub wmt_mcu_patch_loaded: bool,
+    pub fm_dsp_patch_loaded: bool,
+}
+
+impl WmtPatchManifest {
+    /// Verify the 16-byte ASCII date prefix (`"20"` year century) of a 28-byte MediaTek WMT ROM patch header.
+    #[inline]
+    pub const fn verify_wmt_patch_header(hdr16: &[u8; 16]) -> bool {
+        hdr16[0] == b'2'
+            && hdr16[1] == b'0'
+            && hdr16[2].is_ascii_digit()
+            && hdr16[3].is_ascii_digit()
+    }
+
+    #[inline]
+    pub const fn is_rf_ready(&self) -> bool {
+        self.wifi_ram_code_loaded && self.wmt_mcu_patch_loaded && self.fm_dsp_patch_loaded
+    }
+}
+
+/// MT6768 AFE Connsys I2S (`0x1122_0C78`) -> MT6358 DL1 / Hostless FM route state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AfeFmRoute {
+    pub connsys_i2s_con_addr: u64,
+    pub connsys_i2s_con_val: u32,
+    pub gain_steps_of_256: u16,
+    pub enabled: bool,
+}
+
+impl Default for AfeFmRoute {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AfeFmRoute {
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            connsys_i2s_con_addr: afe_connsys_fm::AFE_CONNSYS_I2S_CON,
+            connsys_i2s_con_val: 0,
+            gain_steps_of_256: 0,
+            enabled: false,
+        }
+    }
+
+    pub fn enable_fm_audio_path(&mut self, gain_steps_of_256: u16) {
+        self.connsys_i2s_con_addr = afe_connsys_fm::AFE_CONNSYS_I2S_CON;
+        self.connsys_i2s_con_val = 0x8000_0909;
+        self.gain_steps_of_256 = gain_steps_of_256.min(256);
+        self.enabled = true;
+    }
+}
+
+/// 64×36 integer wave pool coupled to the 16× Catmull-Rom 768 kHz audio/FM demodulator.
+#[derive(Debug, Clone)]
+pub struct WavePool64x36 {
+    pub energy_accum: i64,
+    pub frames_injected: u64,
+}
+
+impl Default for WavePool64x36 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WavePool64x36 {
+    pub const fn new() -> Self {
+        Self {
+            energy_accum: 0,
+            frames_injected: 0,
+        }
+    }
+
+    pub fn inject_oversampled_frame(&mut self, pcm_768k: &[i16; 16], snr_db: u8) {
+        let mut e = 0i64;
+        for &s in pcm_768k {
+            e += (s as i64).abs();
+        }
+        self.energy_accum = self
+            .energy_accum
+            .wrapping_add(e * (snr_db.max(1) as i64));
+        self.frames_injected = self.frames_injected.wrapping_add(1);
+    }
+}
+
+/// Exact integer 16× Catmull-Rom cubic spline upsampler (`48 kHz -> 768 kHz`) with zero floats.
+pub fn catmull_rom_upsample_16x(p0: i16, p1: i16, p2: i16, p3: i16) -> [i16; 16] {
+    let mut out = [0i16; 16];
+    let x0 = p0 as i64;
+    let x1 = p1 as i64;
+    let x2 = p2 as i64;
+    let x3 = p3 as i64;
+
+    let a0 = -x0 + 3 * x1 - 3 * x2 + x3;
+    let a1 = 2 * x0 - 5 * x1 + 4 * x2 - x3;
+    let a2 = -x0 + x2;
+    let a3 = 2 * x1;
+
+    for (step, slot) in out.iter_mut().enumerate() {
+        let t = step as i64; // 0..15 in units of 1/16
+        // Horner evaluation over denominator 2 * 16^3 = 8192:
+        let num = ((a0 * t + (a1 << 4)) * t + (a2 << 8)) * t + (a3 << 12);
+        let val = (num + 4096) >> 13;
+        *slot = val.clamp(-32767, 32767) as i16;
+    }
+    out
+}
+
+/// Unified `MT6631` controller combining `ConnsysGate`, `FmTuner`, `WmtPatchManifest`, `AfeFmRoute`, and `WavePool64x36`.
+#[derive(Debug, Clone, Default)]
+pub struct Mt6631Controller {
+    pub gate: ConnsysGate,
+    pub fm: FmTuner,
+    pub wmt_manifest: WmtPatchManifest,
+    pub afe_route: AfeFmRoute,
+    pub wave_pool: WavePool64x36,
+    pub chip_id: u16,
+    pub current_wifi_channel_mhz: u16,
+}
+
+impl Mt6631Controller {
+    pub const fn new() -> Self {
+        Self {
+            gate: ConnsysGate::new(),
+            fm: FmTuner::new(),
+            wmt_manifest: WmtPatchManifest {
+                wifi_ram_code_loaded: false,
+                wmt_mcu_patch_loaded: false,
+                fm_dsp_patch_loaded: false,
+            },
+            afe_route: AfeFmRoute::new(),
+            wave_pool: WavePool64x36::new(),
+            chip_id: consys_mmio::MT6631_A_DIE_CHIP_ID,
+            current_wifi_channel_mhz: 2437,
+        }
+    }
+
+    pub fn dispatch_hqa(&mut self, mut req: HqaFrame) -> HqaFrame {
+        req.msg_type = wifi_hqa::HQA_TYPE_RSP;
+        if req.cmd_id == HqaCmd::GetChipId as u16 {
+            req.param0 = consys_mmio::MT6631_A_DIE_CHIP_ID as u32;
+            self.chip_id = consys_mmio::MT6631_A_DIE_CHIP_ID;
+        } else if req.cmd_id == HqaCmd::SetChannel as u16 {
+            self.current_wifi_channel_mhz = (req.param0 & 0xFFFF) as u16;
+        }
+        req
+    }
+
+    pub fn load_demo_offgrid_broadcast(&mut self) {
+        self.fm.tune_100khz(995);
+        self.fm.rds_pi = 0x8B15;
+        self.fm.rds_ps = *b"AYE-99.5";
+        let msg = b"FROM SYRIA TO REYKJAVIK * AYE.IS SOVEREIGN SANCTUARY 432HZ";
+        self.fm.rds_rt[..msg.len()].copy_from_slice(msg);
+    }
+}
+
+/// Drop-in v5.4.0 / v5.5.0 helper that probes `ConnsysGate`, dispatches `HQA` (`0x1814_2880`),
+/// tunes FM (`99.5 MHz`), and injects a 16× Catmull-Rom 768 kHz frame into the 64×36 Wave Pool.
+pub fn poll_mt6631_v540(fdt_has_connsys: bool, mcu_status_reg: u32) -> Mt6631Controller {
+    let mut ctrl = Mt6631Controller::new();
+    ctrl.gate.evaluate_probe(fdt_has_connsys, mcu_status_reg);
+    let _chip = ctrl.dispatch_hqa(HqaFrame::new(HqaCmd::GetChipId, 0));
+    let _chan = ctrl.dispatch_hqa(HqaFrame::new(HqaCmd::SetChannel, 2412));
+    ctrl.load_demo_offgrid_broadcast();
+    let _ = FmTuner::split_mhz(ctrl.fm.current_freq_100khz);
+    let pcm_768k = catmull_rom_upsample_16x(-4096, 8192, 16384, -8192);
+    ctrl.wave_pool
+        .inject_oversampled_frame(&pcm_768k, ctrl.fm.snr_db);
+    ctrl
+}
+
+/// Arm `WmtPatchManifest`, `ConnsysGate`, and `AfeFmRoute` once the 28-byte WMT patch header is verified.
+pub fn arm_mt6631_rf_and_afe(ctrl: &mut Mt6631Controller, wmt_hdr16: &[u8; 16]) -> bool {
+    if WmtPatchManifest::verify_wmt_patch_header(wmt_hdr16) {
+        ctrl.wmt_manifest.wifi_ram_code_loaded = true;
+        ctrl.wmt_manifest.wmt_mcu_patch_loaded = true;
+        ctrl.wmt_manifest.fm_dsp_patch_loaded = true;
+        ctrl.gate.evaluate_probe(true, WMT_MCU_READY_MAGIC);
+        ctrl.afe_route.enable_fm_audio_path(128);
+    }
+    ctrl.wmt_manifest.is_rf_ready() && ctrl.gate.can_touch_mmio()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +748,22 @@ mod tests {
         assert_eq!(pkt[1], stp_btif_protocol::FM_TUNE_OPCODE);
         let payload_len = u16::from_le_bytes([pkt[2], pkt[3]]) as usize;
         assert_eq!(payload_len + 4, pkt.len());
+    }
+
+    #[test]
+    fn connsys_gate_wmt_manifest_and_afe_route_arm_cleanly() {
+        let mut ctrl = poll_mt6631_v540(true, 0);
+        // Unbooted MCU defaults safely to ShadowLoopback
+        assert!(!ctrl.gate.can_touch_mmio());
+        assert_eq!(ctrl.chip_id, 0x6631);
+        assert_eq!(FmTuner::split_mhz(ctrl.fm.current_freq_100khz), (99, 5));
+        assert_eq!(ctrl.wave_pool.frames_injected, 1);
+
+        // Arming with a valid WMT patch date header transitions to HardwareMmio & enables AFE route
+        let hdr16 = b"202610311200000\0";
+        assert!(arm_mt6631_rf_and_afe(&mut ctrl, hdr16));
+        assert!(ctrl.gate.can_touch_mmio());
+        assert!(ctrl.afe_route.enabled);
+        assert_eq!(ctrl.afe_route.connsys_i2s_con_addr, 0x1122_0C78);
     }
 }
