@@ -1,0 +1,397 @@
+wlan_drv_gen4m_6768 3825664 0 - Live 0x0000000000000000 (O)
+wmt_chrdev_wifi 32768 1 wlan_drv_gen4m_6768, Live 0x0000000000000000 (O)
+gps_drv_stp 118784 3 - Live 0x0000000000000000 (O)
+fmradio_drv_mt6631 221184 0 - Live 0x0000000000000000 (O)
+st21nfc 32768 0 - Live 0x0000000000000000 (O)
+fpsgo 1445888 0 - Live 0x0000000000000000 (PO)
+mtk_fpsgo 536576 1 fpsgo, Live 0x0000000000000000 (O)
+widevine_driver 16384 0 - Live 0x0000000000000000 (O)
+eas_ext 12288 0 - Live 0x0000000000000000 (PO)
+cpuqos_ext 12288 0 - Live 0x0000000000000000 (PO)
+scheduler 380928 1 mtk_fpsgo, Live 0x0000000000000000 (O)
+arm_dsu_pmu 24576 0 - Live 0x0000000000000000
+mac80211 1118208 0 - Live 0x0000000000000000
+cfg80211 1146880 2 wlan_drv_gen4m_6768,mac80211, Live 0x0000000000000000
+t_base_tui 28672 0 - Live 0x0000000000000000 (O)
+tui_common 16384 1 t_base_tui, Live 0x0000000000000000 (O)
+mtk_disp_sec 28672 0 - Live 0x0000000000000000 (O)
+sec 36864 0 - Live 0x0000000000000000 (O)
+touch_boost 36864 0 - Live 0x0000000000000000 (O)
+mtk_ioctl_touch_boost 16384 1 touch_boost, Live 0x0000000000000000 (O)
+prize_dual_camera 114688 0 - Live 0x0000000000000000 (O)
+powerhal_cpu_ctrl 40960 2 mtk_fpsgo,scheduler, Live 0x0000000000000000 (O)
+mtk_ioctl_powerhal 20480 1 powerhal_cpu_ctrl, Live 0x0000000000000000 (O)
+mtk_perf_ioctl 28672 1 mtk_fpsgo, Live 0x0000000000000000 (O)
+mtk_perf_common 65536 0 - Live 0x0000000000000000 (O)
+cpufreq_sugov_ext 221184 5 mtk_fpsgo,scheduler,mtk_perf_common, Live 0x0000000000000000 (O)
+uload_ind 28672 0 - Live 0x0000000000000000 (O)
+load_track 16384 1 uload_ind, Live 0x0000000000000000 (O)
+atf_logger 28672 0 - Live 0x0000000000000000 (O)
+mtk_jpeg 57344 0 - Live 0x0000000000000000 (O)
+mtk_vcodec_enc_v1 204800 0 - Live 0x0000000000000000 (O)
+mtk_vcodec_dec_v1 225280 0 - Live 0x0000000000000000 (O)
+mtk_vcu 81920 2 - Live 0x0000000000000000 (O)
+mtk_vcodec_common 81920 3 mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,mtk_vcu, Live 0x0000000000000000 (O)
+bt_drv_connac1x 57344 1 - Live 0x0000000000000000 (O)
+wmt_drv 1339392 6 wlan_drv_gen4m_6768,wmt_chrdev_wifi,gps_drv_stp,fmradio_drv_mt6631,bt_drv_connac1x, Live 0x0000000000000000 (O)
+mtk_cm_mgr_mt6768 20480 0 - Live 0x0000000000000000 (O)
+mtk_cm_mgr 45056 2 mtk_fpsgo,mtk_cm_mgr_mt6768, Live 0x0000000000000000 (O)
+mt63xx_debug 12288 0 - Live 0x0000000000000000 (O)
+mtk_tinysys_ipi 24576 0 - Live 0x0000000000000000 (O)
+mtk_rpmsg_mbox 16384 1 mtk_tinysys_ipi, Live 0x0000000000000000 (O)
+mtk_mbox 45056 2 mtk_tinysys_ipi,mtk_rpmsg_mbox, Live 0x0000000000000000 (O)
+camera_dpe_isp40 90112 0 - Live 0x0000000000000000 (O)
+camera_fdvt_isp40 36864 0 - Live 0x0000000000000000 (O)
+camera_isp_4_t 299008 0 - Live 0x0000000000000000 (O)
+ccu_isp4 94208 1 camera_isp_4_t, Live 0x0000000000000000 (O)
+cam_qos_4 24576 1 camera_isp_4_t, Live 0x0000000000000000 (O)
+camera_mem 122880 0 - Live 0x0000000000000000 (O)
+archcounter_timesync 20480 1 camera_isp_4_t,[permanent], Live 0x0000000000000000 (O)
+mt6768_mt6358 28672 1 - Live 0x0000000000000000 (O)
+snd_soc_mt6358 143360 2 mt6768_mt6358, Live 0x0000000000000000 (O)
+snd_soc_mt6768_afe 208896 3 mt6768_mt6358, Live 0x0000000000000000 (O)
+snd_soc_mtk_common 69632 1 snd_soc_mt6768_afe, Live 0x0000000000000000 (O)
+mtk_afe_external 24576 1 snd_soc_mtk_common, Live 0x0000000000000000 (O)
+mtk_btcvsd 32768 1 - Live 0x0000000000000000 (O)
+aw87xxx_pa 106496 2 mt6768_mt6358,snd_soc_mt6358, Live 0x0000000000000000 (O)
+hac_gpio 16384 1 snd_soc_mt6358, Live 0x0000000000000000 (O)
+fsa4480_i2c 24576 0 - Live 0x0000000000000000 (O)
+snd_soc_mt6660 24576 0 - Live 0x0000000000000000 (O)
+mtk_sp_spk_amp 20480 2 mt6768_mt6358,snd_soc_mt6660, Live 0x0000000000000000 (O)
+musb_boost 32768 0 - Live 0x0000000000000000 (O)
+mediatek_eem 94208 0 - Live 0x0000000000000000 (O)
+CPU_DVFS 114688 2 mtk_perf_common,mediatek_eem, Live 0x0000000000000000 (O)
+camera_eeprom_isp4_t 28672 0 - Live 0x0000000000000000 (O)
+imgsensor_isp4_t 176128 1 camera_eeprom_isp4_t, Live 0x0000000000000000 (O)
+mt6358_accdet 49152 3 mt6768_mt6358,snd_soc_mt6358,fsa4480_i2c, Live 0x0000000000000000 (O)
+mtk_irtx_pwm 12288 0 - Live 0x0000000000000000 (O)
+mtk_pwm 45056 1 mtk_irtx_pwm, Live 0x0000000000000000 (O)
+mdp_drv_mt6768 483328 2 - Live 0x0000000000000000 (O)
+cmdq_bdg_test 16384 0 - Live 0x0000000000000000 (O)
+cmdq_bdg_mailbox 28672 3 cmdq_bdg_test,[permanent], Live 0x0000000000000000 (O)
+cmdq_sec_drv 61440 7 mtk_disp_sec,mtk_vcu,mdp_drv_mt6768,[permanent], Live 0x0000000000000000 (O)
+mtk_heap_debug 53248 0 - Live 0x0000000000000000 (O)
+gz_log_mod 20480 0 - Live 0x0000000000000000 (O)
+gz_main_mod 49152 0 - Live 0x0000000000000000 (O)
+mtk_sec_heap 45056 10 widevine_driver,t_base_tui,mtk_disp_sec,mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,mtk_vcu,camera_mem,mdp_drv_mt6768,mtk_heap_debug,gz_main_mod, Live 0x0000000000000000 (O)
+trusted_mem 90112 3 t_base_tui,gz_main_mod,mtk_sec_heap, Live 0x0000000000000000 (O)
+iommu_gz 20480 5 mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,mtk_vcu,mtk_sec_heap,trusted_mem, Live 0x0000000000000000 (O)
+gz_tz_system 57344 4 cmdq_sec_drv,gz_main_mod,trusted_mem,iommu_gz, Live 0x0000000000000000 (O)
+gz_virtio_mod 28672 0 - Live 0x0000000000000000 (O)
+gz_irq_mod 24576 0 - Live 0x0000000000000000 (O)
+gz_ipc_mod 45056 2 gz_main_mod,gz_tz_system, Live 0x0000000000000000 (O)
+gz_trusty_mod 32768 6 gz_log_mod,gz_main_mod,gz_tz_system,gz_virtio_mod,gz_irq_mod,gz_ipc_mod, Live 0x0000000000000000 (O)
+galaxycore_spi_gc7272 110592 0 - Live 0x0000000000000000 (O)
+nvmem_mt635x_efuse 12288 3 - Live 0x0000000000000000 (O)
+mtk_smi_bwc 24576 0 - Live 0x0000000000000000 (O)
+mcdi 98304 1 mediatek_eem, Live 0x0000000000000000 (O)
+mtk_usb_f_rndis 36864 0 - Live 0x0000000000000000 (O)
+mtk_u_ether 45056 1 mtk_usb_f_rndis, Live 0x0000000000000000 (O)
+c2k_usb_f_via_modem 12288 1 - Live 0x0000000000000000 (O)
+c2k_usb_f_via_ets 12288 1 - Live 0x0000000000000000 (O)
+c2k_usb_f_via_atc 12288 1 - Live 0x0000000000000000 (O)
+c2k_usb 49152 6 c2k_usb_f_via_modem,c2k_usb_f_via_ets,c2k_usb_f_via_atc, Live 0x0000000000000000 (O)
+sub2af 28672 0 - Live 0x0000000000000000 (O)
+subaf 40960 0 - Live 0x0000000000000000 (O)
+main3af 28672 0 - Live 0x0000000000000000 (O)
+main2af 81920 0 - Live 0x0000000000000000 (O)
+mainaf 212992 0 - Live 0x0000000000000000 (O)
+leds_mt6370_flash 20480 0 - Live 0x0000000000000000 (O)
+flashlights_ocp81378 24576 0 - Live 0x0000000000000000 (O)
+flashlight 45056 2 leds_mt6370_flash,flashlights_ocp81378, Live 0x0000000000000000 (O)
+mtk_composite 12288 0 - Live 0x0000000000000000 (O)
+v4l2_flash_led_class 20480 1 leds_mt6370_flash, Live 0x0000000000000000
+ccci_cldma 69632 0 - Live 0x0000000000000000 (O)
+ccci_ccif 65536 0 - Live 0x0000000000000000 (O)
+sensor_probe 12288 0 - Live 0x0000000000000000 (O)
+uncali_maghub 12288 0 - Live 0x0000000000000000 (O)
+uncali_gyrohub 12288 0 - Live 0x0000000000000000 (O)
+uncali_acchub 12288 0 - Live 0x0000000000000000 (O)
+orienthub 12288 0 - Live 0x0000000000000000 (O)
+linearacchub 12288 0 - Live 0x0000000000000000 (O)
+gravityhub 12288 0 - Live 0x0000000000000000 (O)
+gmagrotvechub 12288 0 - Live 0x0000000000000000 (O)
+gamerotvechub 12288 0 - Live 0x0000000000000000 (O)
+rotatvechub 12288 0 - Live 0x0000000000000000 (O)
+fusion 32768 11 sensor_probe,uncali_maghub,uncali_gyrohub,uncali_acchub,orienthub,linearacchub,gravityhub,gmagrotvechub,gamerotvechub,rotatvechub, Live 0x0000000000000000 (O)
+situationhub 28672 0 - Live 0x0000000000000000 (O)
+situation 24576 3 sensor_probe,situationhub, Live 0x0000000000000000 (O)
+stepsignhub 16384 0 - Live 0x0000000000000000 (O)
+step_counter 28672 3 sensor_probe,stepsignhub, Live 0x0000000000000000 (O)
+barohub 16384 0 - Live 0x0000000000000000 (O)
+baro_common 28672 3 sensor_probe,barohub, Live 0x0000000000000000 (O)
+alspshub 28672 0 - Live 0x0000000000000000 (O)
+alsps_common 45056 4 sensor_probe,alspshub, Live 0x0000000000000000 (O)
+maghub 24576 0 - Live 0x0000000000000000 (O)
+mag_common 28672 3 sensor_probe,maghub, Live 0x0000000000000000 (O)
+gyrohub 24576 0 - Live 0x0000000000000000 (O)
+gyro_common 28672 2 sensor_probe,gyrohub, Live 0x0000000000000000 (O)
+accelhub 24576 0 - Live 0x0000000000000000 (O)
+accel_common 28672 3 sensor_probe,accelhub, Live 0x0000000000000000 (O)
+sensor_list 16384 0 - Live 0x0000000000000000 (O)
+hwmon 36864 16 fusion,situation,step_counter,baro_common,alsps_common,mag_common,gyro_common,accel_common, Live 0x0000000000000000 (O)
+sensorHub 69632 17 uncali_maghub,uncali_gyrohub,uncali_acchub,orienthub,linearacchub,gravityhub,gmagrotvechub,gamerotvechub,rotatvechub,situationhub,stepsignhub,barohub,alspshub,maghub,gyrohub,accelhub,sensor_list, Live 0x0000000000000000 (O)
+ccci_fsm_scp 24576 0 - Live 0x0000000000000000 (O)
+scp 94208 2 sensorHub,ccci_fsm_scp, Live 0x0000000000000000 (O)
+MTK_INTERNAL_SPM 229376 3 snd_soc_mt6768_afe,mcdi,scp, Live 0x0000000000000000 (O)
+thermal_monitor 540672 3 mediatek_eem,MTK_INTERNAL_SPM, Live 0x0000000000000000 (O)
+mtk_ppm_v3 143360 3 mediatek_eem,CPU_DVFS,thermal_monitor, Live 0x0000000000000000 (O)
+Upower 61440 3 cpufreq_sugov_ext,mediatek_eem,mtk_ppm_v3, Live 0x0000000000000000 (O)
+mediatek_static_power 53248 1 Upower, Live 0x0000000000000000 (O)
+mtk_power_gs_v1 49152 1 MTK_INTERNAL_SPM, Live 0x0000000000000000 (O)
+mtk_peak_power_budget 86016 0 - Live 0x0000000000000000 (O)
+mtk_cpu_power_throttling 36864 0 - Live 0x0000000000000000 (O)
+mtk_md_power_throttling 12288 0 - Live 0x0000000000000000 (O)
+ccci_md_all 499712 44 snd_soc_mtk_common,c2k_usb,ccci_cldma,ccci_ccif,ccci_fsm_scp,MTK_INTERNAL_SPM,thermal_monitor,mtk_md_power_throttling, Live 0x0000000000000000 (O)
+ccci_auxadc 16384 1 ccci_md_all, Live 0x0000000000000000 (O)
+ccci_util_lib 114688 22 snd_soc_mtk_common,ccci_cldma,ccci_ccif,ccci_fsm_scp,ccci_md_all,ccci_auxadc,[permanent], Live 0x0000000000000000 (O)
+ccmni 32768 2 ccci_cldma,ccci_md_all, Live 0x0000000000000000 (O)
+rps_perf 16384 2 mtk_u_ether,ccmni, Live 0x0000000000000000 (O)
+syscon_reboot_mode 12288 0 - Live 0x0000000000000000
+reboot_mode 16384 1 syscon_reboot_mode, Live 0x0000000000000000
+mali_kbase_mt6768_r49 937984 44 - Live 0x0000000000000000 (O)
+mali_mgm_mt6768_r49 45056 1 - Live 0x0000000000000000 (O)
+mali_prot_alloc_mt6768_r49 12288 0 - Live 0x0000000000000000 (O)
+ged 647168 2 mtk_fpsgo,mali_kbase_mt6768_r49, Live 0x0000000000000000 (O)
+mtk_gpu_qos 24576 1 ged, Live 0x0000000000000000 (O)
+mtk_qos_legacy 36864 2 mtk_perf_common,mtk_gpu_qos, Live 0x0000000000000000 (O)
+mtk_gpufreq_mt6768 61440 2 mediatek_eem,thermal_monitor, Live 0x0000000000000000 (O)
+mtk_gpufreq_wrapper_legacy 69632 5 thermal_monitor,mali_kbase_mt6768_r49,ged,mtk_gpu_qos,mtk_gpufreq_mt6768, Live 0x0000000000000000 (O)
+mtk_battery_oc_throttling 24576 6 flashlight,mtk_ppm_v3,mtk_peak_power_budget,mtk_cpu_power_throttling,mtk_md_power_throttling,mtk_gpufreq_wrapper_legacy, Live 0x0000000000000000 (O)
+mtk_pbm 28672 4 flashlight,mtk_ppm_v3,ccci_md_all,mtk_gpufreq_wrapper_legacy, Live 0x0000000000000000 (O)
+mtk_mdpm_v1 24576 3 MTK_INTERNAL_SPM,ccci_md_all,mtk_pbm, Live 0x0000000000000000 (O)
+mtk_dynamic_loading_throttling 20480 1 mtk_pbm, Live 0x0000000000000000 (O)
+mt6768_dcm 40960 0 - Live 0x0000000000000000 (O)
+mtk_dcm 20480 1 mt6768_dcm, Live 0x0000000000000000 (O)
+mtk_dvfsrc_start 16384 0 - Live 0x0000000000000000 (O)
+mtk_dvfsrc_devfreq 12288 0 - Live 0x0000000000000000 (O)
+mtk_dvfsrc_helper 106496 3 mtk_perf_common,musb_boost,scp, Live 0x0000000000000000 (O)
+gf_tee 32768 3 - Live 0x0000000000000000 (O)
+mtk_cqdma 28672 0 - Live 0x0000000000000000 (O)
+conn_md_drv 32768 2 wmt_drv,ccci_md_all, Live 0x0000000000000000 (O)
+connadp 57344 3 wlan_drv_gen4m_6768,wmt_drv,thermal_monitor, Live 0x0000000000000000 (O)
+mtk_low_battery_throttling 57344 7 flashlight,mtk_ppm_v3,mtk_peak_power_budget,mtk_cpu_power_throttling,mtk_md_power_throttling,mtk_gpufreq_wrapper_legacy,connadp, Live 0x0000000000000000 (O)
+btif_drv 114688 1 wmt_drv, Live 0x0000000000000000 (O)
+fhctl 126976 0 - Live 0x0000000000000000 (O)
+sspm_v1 57344 9 mtk_cm_mgr,CPU_DVFS,mcdi,MTK_INTERNAL_SPM,Upower,ged,mtk_qos_legacy,mtk_dvfsrc_helper,fhctl, Live 0x0000000000000000 (O)
+nfc 102400 0 - Live 0x0000000000000000
+mac802154 147456 0 - Live 0x0000000000000000
+ieee802154_socket 32768 0 - Live 0x0000000000000000
+ieee802154_6lowpan 32768 0 - Live 0x0000000000000000
+ieee802154 147456 3 mac802154,ieee802154_socket,ieee802154_6lowpan, Live 0x0000000000000000
+nhc_udp 12288 0 - Live 0x0000000000000000
+nhc_routing 12288 0 - Live 0x0000000000000000
+nhc_mobility 12288 0 - Live 0x0000000000000000
+nhc_ipv6 12288 0 - Live 0x0000000000000000
+nhc_hop 12288 0 - Live 0x0000000000000000
+nhc_fragment 12288 0 - Live 0x0000000000000000
+nhc_dest 12288 0 - Live 0x0000000000000000
+6lowpan 32768 8 ieee802154_6lowpan,nhc_udp,nhc_routing,nhc_mobility,nhc_ipv6,nhc_hop,nhc_fragment,nhc_dest, Live 0x0000000000000000
+9pnet_fd 28672 0 - Live 0x0000000000000000
+9pnet 94208 1 9pnet_fd, Live 0x0000000000000000
+diag 12288 0 - Live 0x0000000000000000
+tipc 372736 1 diag, Live 0x0000000000000000
+l2tp_ppp 32768 0 - Live 0x0000000000000000
+l2tp_core 69632 1 l2tp_ppp, Live 0x0000000000000000
+hidp 36864 0 - Live 0x0000000000000000
+rfcomm 73728 0 - Live 0x0000000000000000
+can_gw 24576 0 - Live 0x0000000000000000
+can_bcm 32768 0 - Live 0x0000000000000000
+can_raw 28672 0 - Live 0x0000000000000000
+can 28672 3 can_gw,can_bcm,can_raw, Live 0x0000000000000000
+tls 114688 0 - Live 0x0000000000000000
+vmw_vsock_virtio_transport 28672 0 - Live 0x0000000000000000
+8021q 40960 0 - Live 0x0000000000000000
+btsdio 16384 0 - Live 0x0000000000000000
+hci_uart 81920 0 - Live 0x0000000000000000
+btqca 20480 1 hci_uart, Live 0x0000000000000000
+btbcm 24576 1 hci_uart, Live 0x0000000000000000
+bluetooth 716800 6 hidp,rfcomm,btsdio,hci_uart,btqca,btbcm, Live 0x0000000000000000
+rfkill 36864 3 cfg80211,nfc,bluetooth, Live 0x0000000000000000
+ptp 40960 0 - Live 0x0000000000000000
+pps_core 24576 1 ptp, Live 0x0000000000000000
+ftdi_sio 57344 0 - Live 0x0000000000000000
+usbserial 45056 1 ftdi_sio, Live 0x0000000000000000
+cdc_acm 40960 0 - Live 0x0000000000000000
+usbmon 45056 0 - Live 0x0000000000000000
+r8153_ecm 12288 0 - Live 0x0000000000000000
+aqc111 24576 0 - Live 0x0000000000000000
+cdc_ncm 32768 0 - Live 0x0000000000000000
+cdc_eem 12288 0 - Live 0x0000000000000000
+cdc_ether 20480 2 r8153_ecm,cdc_ncm, Live 0x0000000000000000
+ax88179_178a 40960 0 - Live 0x0000000000000000
+asix 49152 0 - Live 0x0000000000000000
+usbnet 53248 7 r8153_ecm,aqc111,cdc_ncm,cdc_eem,cdc_ether,ax88179_178a,asix, Live 0x0000000000000000
+r8152 155648 1 r8153_ecm, Live 0x0000000000000000
+rtl8150 24576 0 - Live 0x0000000000000000
+wwan 32768 0 - Live 0x0000000000000000
+pptp 32768 0 - Live 0x0000000000000000
+pppox 20480 2 l2tp_ppp,pptp, Live 0x0000000000000000
+ppp_mppe 12288 0 - Live 0x0000000000000000
+ppp_deflate 12288 0 - Live 0x0000000000000000
+bsd_comp 12288 0 - Live 0x0000000000000000
+ppp_generic 45056 6 l2tp_ppp,pptp,pppox,ppp_mppe,ppp_deflate,bsd_comp, Live 0x0000000000000000
+slhc 24576 1 ppp_generic, Live 0x0000000000000000
+slcan 24576 0 - Live 0x0000000000000000
+vcan 16384 0 - Live 0x0000000000000000
+can_dev 49152 2 slcan,vcan, Live 0x0000000000000000
+mii 24576 4 ax88179_178a,asix,usbnet,r8152, Live 0x0000000000000000
+macsec 73728 0 - Live 0x0000000000000000
+vcpu_stall_detector 20480 0 - Live 0x0000000000000000
+open_dice 12288 0 - Live 0x0000000000000000
+zram 49152 2 - Live 0x0000000000000000
+virtio_blk 32768 0 - Live 0x0000000000000000
+virtio_console 40960 0 - Live 0x0000000000000000
+cctrng 20480 0 - Live 0x0000000000000000
+virtio_balloon 32768 0 - Live 0x0000000000000000
+virtio_pci 36864 0 - Live 0x0000000000000000
+virtio_pci_legacy_dev 24576 1 virtio_pci, Live 0x0000000000000000
+virtio_pci_modern_dev 32768 1 virtio_pci, Live 0x0000000000000000
+libarc4 16384 2 mac80211,ppp_mppe, Live 0x0000000000000000
+zsmalloc 45056 1 zram, Live 0x0000000000000000
+kheaders 4194304 0 - Live 0x0000000000000000
+gzvm 61440 0 - Live 0x0000000000000000
+trace_mmstat 32768 0 - Live 0x0000000000000000 (O)
+mtk_gpu_hal 53248 8 mtk_perf_common,thermal_monitor,mali_kbase_mt6768_r49,ged,mtk_gpu_qos,mtk_gpufreq_mt6768,mtk_gpufreq_wrapper_legacy,trace_mmstat, Live 0x0000000000000000 (O)
+prize_sim_state 12288 0 - Live 0x0000000000000000 (O)
+sec_rng 12288 0 - Live 0x0000000000000000 (O)
+dbg_error_flag 28672 0 - Live 0x0000000000000000 (O)
+aee_rs 16384 0 - Live 0x0000000000000000 (O)
+panel_sc_nt36672c_vdo_90hz_6382 192512 0 - Live 0x0000000000000000 (O)
+panel_td4320_fhdp_dsi_vdo_auo_rt5081 90112 0 - Live 0x0000000000000000 (O)
+panel_jingtai_gc7272_vdo_dphy_120hz 258048 0 - Live 0x0000000000000000 (O)
+pri_common_node 20480 3 mt6358_accdet,galaxycore_spi_gc7272,panel_jingtai_gc7272_vdo_dphy_120hz, Live 0x0000000000000000 (O)
+panel_hx83112b_auo_vdo_60hz_rt5081 94208 0 - Live 0x0000000000000000 (O)
+panel_hx83112b_auo_cmd_60hz_rt5081 94208 0 - Live 0x0000000000000000 (O)
+hardware_info 32768 9 st21nfc,imgsensor_isp4_t,galaxycore_spi_gc7272,situationhub,alspshub,maghub,accelhub,gf_tee,panel_jingtai_gc7272_vdo_dphy_120hz, Live 0x0000000000000000 (O)
+leds_mtk_pwm 12288 0 - Live 0x0000000000000000 (O)
+leds_mtk_disp 12288 0 - Live 0x0000000000000000 (O)
+mediatek_drm 5079040 15 mtk_fpsgo,t_base_tui,mtk_disp_sec,ccci_md_all,ged,aee_rs,leds_mtk_pwm,leds_mtk_disp, Live 0x0000000000000000 (O)
+spi_slave 24576 2 cmdq_bdg_mailbox,mediatek_drm, Live 0x0000000000000000 (O)
+drm_display_helper 172032 1 mediatek_drm, Live 0x0000000000000000
+drm_dma_helper 28672 1 mediatek_drm, Live 0x0000000000000000
+mtk_mml 1982464 1 mediatek_drm, Live 0x0000000000000000 (O)
+mtk_sync 20480 2 mediatek_drm,mtk_mml, Live 0x0000000000000000 (O)
+mtk_panel_ext 20480 7 panel_sc_nt36672c_vdo_90hz_6382,panel_td4320_fhdp_dsi_vdo_auo_rt5081,panel_jingtai_gc7272_vdo_dphy_120hz,panel_hx83112b_auo_vdo_60hz_rt5081,panel_hx83112b_auo_cmd_60hz_rt5081,leds_mtk_disp,mediatek_drm, Live 0x0000000000000000 (O)
+leds_mtk 28672 4 thermal_monitor,leds_mtk_pwm,leds_mtk_disp,mediatek_drm, Live 0x0000000000000000 (O)
+mtk_bp_thl 24576 5 flashlight,mtk_peak_power_budget,mtk_cpu_power_throttling,mtk_md_power_throttling,leds_mtk, Live 0x0000000000000000 (O)
+pwm_mtk_disp 24576 1 - Live 0x0000000000000000 (O)
+extcon_mtk_usb 20480 0 - Live 0x0000000000000000 (O)
+tcpci_late_sync 12288 0 [permanent], Live 0x0000000000000000 (O)
+rt_pd_manager 16384 0 - Live 0x0000000000000000 (O)
+mtk_battery_manager 40960 1 - Live 0x0000000000000000 (O)
+mt6358_battery 397312 0 - Live 0x0000000000000000 (O)
+mtk_pep 24576 0 - Live 0x0000000000000000 (O)
+mtk_pep20 40960 0 - Live 0x0000000000000000 (O)
+mtk_pd_charging 40960 0 - Live 0x0000000000000000 (O)
+mtk_charger_framework 126976 3 mtk_pep,mtk_pep20,mtk_pd_charging, Live 0x0000000000000000 (O)
+mtk_disp_notify 20480 8 wlan_drv_gen4m_6768,wmt_drv,mtk_cm_mgr,galaxycore_spi_gc7272,thermal_monitor,mtk_ppm_v3,mediatek_drm,mtk_charger_framework, Live 0x0000000000000000 (O)
+mtk_pd_adapter 16384 0 - Live 0x0000000000000000 (O)
+mtk_chg_type_det 16384 0 - Live 0x0000000000000000 (O)
+sc8989x_charger 45056 1 - Live 0x0000000000000000 (O)
+mtk_charger_algorithm_class 24576 4 mtk_pep,mtk_pep20,mtk_pd_charging,mtk_charger_framework, Live 0x0000000000000000 (O)
+charger_class 65536 7 extcon_mtk_usb,mtk_pep,mtk_pep20,mtk_pd_charging,mtk_charger_framework,mtk_chg_type_det,sc8989x_charger, Live 0x0000000000000000 (O)
+adapter_class 24576 3 mtk_pd_charging,mtk_charger_framework,mtk_pd_adapter, Live 0x0000000000000000 (O)
+mt6577_auxadc 24576 0 - Live 0x0000000000000000 (O)
+cmdq_helper_inf 49152 3 camera_isp_4_t,mdp_drv_mt6768,mediatek_drm, Live 0x0000000000000000 (O)
+cmdq_platform_mt6768 12288 0 - Live 0x0000000000000000 (O)
+mtk_cmdq_drv_ext 380928 23 mtk_disp_sec,mtk_vcu,camera_dpe_isp40,camera_fdvt_isp40,mdp_drv_mt6768,cmdq_bdg_test,cmdq_sec_drv,mediatek_drm,mtk_mml,cmdq_helper_inf,cmdq_platform_mt6768,[permanent], Live 0x0000000000000000 (O)
+system_heap 81920 131 mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,mdp_drv_mt6768,mtk_heap_debug,mtk_sec_heap,mali_mgm_mt6768_r49,ged,mediatek_drm,mtk_mml, Live 0x0000000000000000 (O)
+iommu_test 12288 0 - Live 0x0000000000000000 (O)
+mtk_iommu 77824 19 - Live 0x0000000000000000 (O)
+iommu_debug 233472 6 mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,mdp_drv_mt6768,mediatek_drm,mtk_cmdq_drv_ext,mtk_iommu, Live 0x0000000000000000 (O)
+iommu_secure 32768 1 mtk_iommu, Live 0x0000000000000000 (O)
+mtk_iommu_util 16384 1 mtk_iommu, Live 0x0000000000000000 (O)
+mmqos_mt6768 16384 0 - Live 0x0000000000000000 (O)
+mmqos_common 131072 2 mediatek_drm,mmqos_mt6768, Live 0x0000000000000000 (O)
+mtk_mmdvfs_debug 32768 3 mtk_dvfsrc_helper,mediatek_drm,mmqos_common, Live 0x0000000000000000 (O)
+mtk_mmdvfs 28672 3 mediatek_drm,mmqos_common,mtk_mmdvfs_debug, Live 0x0000000000000000 (O)
+mtk_mmdebug_vcp_stub 16384 1 mtk_mmdvfs_debug, Live 0x0000000000000000 (O)
+mtk_mmdvfs_ftrace 36864 1 mtk_mmdvfs_debug, Live 0x0000000000000000 (O)
+mtk_icc_core 40960 9 mtk_jpeg,mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,ccu_isp4,cam_qos_4,mdp_drv_mt6768,mediatek_drm,mtk_mml,mmqos_common, Live 0x0000000000000000 (O)
+mtk_smi_dbg 65536 9 mtk_vcodec_enc_v1,mtk_vcodec_dec_v1,camera_isp_4_t,mdp_drv_mt6768,mediatek_drm,mtk_cmdq_drv_ext,mtk_iommu,mtk_mmdvfs_debug,mtk_mmdvfs,[permanent], Live 0x0000000000000000 (O)
+mtk_smi 315392 5 mtk_vcodec_enc_v1,mtk_smi_bwc,mediatek_drm,mmqos_common,mtk_smi_dbg, Live 0x0000000000000000 (O)
+mtk_cpuidle 16384 2 mcdi,MTK_INTERNAL_SPM, Live 0x0000000000000000 (O)
+mtk_cpuhp 20480 1 mtk_ppm_v3, Live 0x0000000000000000 (O)
+mme 49152 2 mtk_disp_sec,mediatek_drm, Live 0x0000000000000000 (O)
+mmprofile 69632 7 mdp_drv_mt6768,cmdq_bdg_mailbox,cmdq_sec_drv,mediatek_drm,mtk_mml,mtk_cmdq_drv_ext,mtk_mmdvfs, Live 0x0000000000000000 (O)
+mtk_kpd 20480 0 - Live 0x0000000000000000 (O)
+mtk_pmic_keys 16384 0 - Live 0x0000000000000000 (O)
+pmic_lvsys_notify 16384 1 mtk_low_battery_throttling, Live 0x0000000000000000 (O)
+pmic_lbat_service 36864 4 wlan_drv_gen4m_6768,mtk_md_power_throttling,mtk_low_battery_throttling,mt6358_battery, Live 0x0000000000000000 (O)
+tcpc_sc2150 32768 0 - Live 0x0000000000000000 (O)
+tcpc_class 303104 8 fsa4480_i2c,mt6358_accdet,extcon_mtk_usb,tcpci_late_sync,rt_pd_manager,mtk_pd_adapter,mtk_chg_type_det,tcpc_sc2150, Live 0x0000000000000000 (O)
+pd_dbg_info 1069056 2 tcpc_sc2150,tcpc_class, Live 0x0000000000000000 (O)
+extdev_io_class 20480 0 - Live 0x0000000000000000 (O)
+mt6370_adc 12288 0 - Live 0x0000000000000000 (O)
+mt6370_regulator 12288 0 - Live 0x0000000000000000 (O)
+mt6370 16384 0 - Live 0x0000000000000000 (O)
+spi_mt65xx 40960 1 gf_tee, Live 0x0000000000000000 (O)
+mtk_mmc_wp 12288 0 - Live 0x0000000000000000 (O)
+usb_meta 32768 0 - Live 0x0000000000000000 (O)
+musb_main 12288 0 - Live 0x0000000000000000 (O)
+musb_hdrc 339968 4 musb_boost,MTK_INTERNAL_SPM,musb_main, Live 0x0000000000000000 (O)
+phy_mtk_tphy 40960 1 - Live 0x0000000000000000 (O)
+phy_generic 20480 2 musb_hdrc, Live 0x0000000000000000
+rtc_mt6397 32768 1 - Live 0x0000000000000000 (O)
+regulator_vibrator 12288 0 - Live 0x0000000000000000 (O)
+8250_mtk 122880 0 - Live 0x0000000000000000 (O)
+emi_dummy 16384 1 ccci_md_all,[permanent], Live 0x0000000000000000 (O)
+emictrl 24576 0 - Live 0x0000000000000000 (O)
+emiisu 20480 0 - Live 0x0000000000000000 (O)
+emimpu 36864 5 wlan_drv_gen4m_6768,wmt_drv,scp,ccci_md_all,sspm_v1, Live 0x0000000000000000 (O)
+emicen 20480 6 ccci_md_all,mali_kbase_mt6768_r49,mali_mgm_mt6768_r49,mtk_qos_legacy,mmqos_common,mtk_smi_dbg, Live 0x0000000000000000 (O)
+mtk_uart_apdma 49152 1 8250_mtk, Live 0x0000000000000000 (O)
+mtk_mmc 73728 0 - Live 0x0000000000000000 (O)
+rpmb_mtk 53248 1 mtk_mmc,[permanent], Live 0x0000000000000000 (O)
+ufs_mediatek_mod 90112 1 rpmb_mtk, Live 0x0000000000000000 (O)
+rpmb 20480 2 rpmb_mtk,ufs_mediatek_mod, Live 0x0000000000000000 (O)
+ufs_mediatek_dbg 45056 2 ccci_md_all,ufs_mediatek_mod, Live 0x0000000000000000 (O)
+irq_dbg 16384 7 ccci_ccif,ccci_md_all,mtk_cmdq_drv_ext,spi_mt65xx,mtk_mmc,ufs_mediatek_mod,ufs_mediatek_dbg, Live 0x0000000000000000 (O)
+mtk_mmc_dbg 200704 1 mtk_mmc, Live 0x0000000000000000 (O)
+pidmap 16384 0 - Live 0x0000000000000000 (O)
+cqhci 36864 1 mtk_mmc, Live 0x0000000000000000 (O)
+blocktag 258048 5 mtk_perf_common,mtk_mmc,ufs_mediatek_mod,mtk_mmc_dbg,cqhci, Live 0x0000000000000000 (O)
+mtk_emi 28672 0 - Live 0x0000000000000000 (O)
+mtk_dvfsrc_regulator 36864 15 - Live 0x0000000000000000 (O)
+mtk_dvfsrc 69632 9 mtk_fpsgo,mtk_cm_mgr_mt6768,musb_boost,mtk_dvfsrc_start,mtk_dvfsrc_devfreq,mtk_dvfsrc_helper,mediatek_drm,mtk_emi,mtk_dvfsrc_regulator, Live 0x0000000000000000 (O)
+dvfsrc_opp_mt6768 12288 0 [permanent], Live 0x0000000000000000 (O)
+mtk_dramc 32768 7 mtk_cm_mgr_mt6768,MTK_INTERNAL_SPM,mtk_qos_legacy,mtk_dvfsrc_helper,mediatek_drm,mmqos_common,dvfsrc_opp_mt6768,[permanent], Live 0x0000000000000000 (O)
+isee 155648 8 - Live 0x0000000000000000 (O)
+mcDrvModule 286720 4 t_base_tui,trusted_mem,mediatek_drm,rpmb_mtk, Live 0x0000000000000000 (O)
+teeperf 16384 0 - Live 0x0000000000000000 (O)
+clkbuf 114688 1 mediatek_drm, Live 0x0000000000000000 (O)
+mt635x_auxadc 24576 0 - Live 0x0000000000000000 (O)
+memory_amms 16384 0 - Live 0x0000000000000000 (O)
+cache_parity 28672 0 - Live 0x0000000000000000 (O)
+mt6358_regulator 36864 36 - Live 0x0000000000000000 (O)
+mt6397 53248 0 - Live 0x0000000000000000 (O)
+mtk_pmic_wrap 98304 0 - Live 0x0000000000000000 (O)
+i2c_mt65xx 53248 0 - Live 0x0000000000000000 (O)
+pinctrl_mtk_common_v2_debug 20480 4 MTK_INTERNAL_SPM,mtk_mmc,mtk_mmc_dbg,i2c_mt65xx, Live 0x0000000000000000 (O)
+pinctrl_mt6768 65536 6 [permanent], Live 0x0000000000000000 (O)
+pinctrl_mtk_v2 81920 38 pinctrl_mtk_common_v2_debug,pinctrl_mt6768, Live 0x0000000000000000 (O)
+pd_chk_mt6768 16384 0 - Live 0x0000000000000000 (O)
+mtk_scpsys_bringup 12288 0 - Live 0x0000000000000000 (O)
+mtk_scpsys_mt6768 20480 0 - Live 0x0000000000000000 (O)
+mtk_scpsys 98304 2 mtk_dvfsrc,mtk_scpsys_mt6768, Live 0x0000000000000000 (O)
+device_apc_mt6768 24576 0 - Live 0x0000000000000000 (O)
+device_apc_common_legacy 36864 3 ccci_md_all,mtk_cmdq_drv_ext,device_apc_mt6768, Live 0x0000000000000000 (O)
+clk_fmeter_mt6768 24576 0 - Live 0x0000000000000000 (O)
+clkdbg_mt6768 24576 0 - Live 0x0000000000000000 (O)
+clkchk_mt6768 24576 1 pd_chk_mt6768, Live 0x0000000000000000 (O)
+clk_mt6768_pg 77824 1 MTK_INTERNAL_SPM, Live 0x0000000000000000 (O)
+clk_mt6768 69632 2 snd_soc_mt6768_afe,MTK_INTERNAL_SPM, Live 0x0000000000000000 (O)
+clk_common 352256 12 imgsensor_isp4_t,mtk_gpufreq_mt6768,fhctl,mediatek_drm,mtk_mmdvfs_debug,pd_chk_mt6768,mtk_scpsys,clk_fmeter_mt6768,clkdbg_mt6768,clkchk_mt6768,clk_mt6768_pg,clk_mt6768, Live 0x0000000000000000 (O)
+timer_mediatek 24576 0 - Live 0x0000000000000000 (O)
+mtk_wdt 24576 1 - Live 0x0000000000000000 (O)
+mtk_socinfo 12288 0 - Live 0x0000000000000000 (O)
+nvmem_mtk_devinfo 12288 0 - Live 0x0000000000000000 (O)
+log_store 28672 0 - Live 0x0000000000000000 (O)
+mtk_printk_ctrl 20480 0 - Live 0x0000000000000000 (O)
+aee_hangdet 81920 0 - Live 0x0000000000000000 (O)
+monitor_hang 40960 2 mtk_heap_debug, Live 0x0000000000000000 (O)
+aee_aed 73728 35 wlan_drv_gen4m_6768,mtk_vcu,wmt_drv,snd_soc_mt6768_afe,snd_soc_mtk_common,mediatek_eem,CPU_DVFS,imgsensor_isp4_t,mdp_drv_mt6768,scp,MTK_INTERNAL_SPM,thermal_monitor,ccci_md_all,ccci_util_lib,mtk_dvfsrc_helper,fhctl,aee_rs,mediatek_drm,mtk_mml,mt6358_battery,mtk_cmdq_drv_ext,iommu_debug,mtk_smi,mmprofile,musb_hdrc,emimpu,ufs_mediatek_dbg,cache_parity,mtk_pmic_wrap,device_apc_common_legacy,clk_common, Live 0x0000000000000000 (O)
+mrdump 73728 18 mtk_heap_debug,MTK_INTERNAL_SPM,ccci_md_all,ccci_util_lib,mali_kbase_mt6768_r49,mtk_gpufreq_mt6768,dbg_error_flag,mediatek_drm,mtk_cmdq_drv_ext,iommu_debug,mmqos_common,mme,ufs_mediatek_dbg,mtk_mmc_dbg,blocktag,cache_parity,aee_hangdet,monitor_hang, Live 0x0000000000000000 (O)
+bootprof 24576 2 usb_meta,isee, Live 0x0000000000000000 (O)
+resmon_sys 24576 0 - Live 0x0000000000000000

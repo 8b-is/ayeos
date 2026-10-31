@@ -1,0 +1,5 @@
+service vendor.payjoy.hardware.payjoyagent-service /vendor/bin/hw/vendor.payjoy.hardware.payjoyagent-service
+    class hal
+    user nobody
+    group nobody
+    shutdown critical

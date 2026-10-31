@@ -1,0 +1,7 @@
+# prize-add-for auto wifi mac-houjian-start
+service wifimacaddr /vendor/bin/wifimacaddr
+    user root
+    group system
+    class late_start
+    oneshot
+# prize-add-for auto wifi mac-houjian-end

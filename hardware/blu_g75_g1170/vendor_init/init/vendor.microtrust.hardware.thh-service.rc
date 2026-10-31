@@ -1,0 +1,5 @@
+service thh-beanpod /vendor/bin/hw/vendor.microtrust.hardware.thh-service
+    interface aidl vendor.microtrust.hardware.thh.IThhDevice/default
+    class hal
+    user system
+    group system

@@ -1,0 +1,3 @@
+service vendor.keymint-beanpod /vendor/bin/hw/android.hardware.security.keymint@3.0-service.beanpod
+	class early_hal
+	user nobody

@@ -1,4 +1,6 @@
+pub mod boot_mt6768;
 pub mod memnet;
+pub mod phoenix_audio;
 pub mod prng;
 pub mod quant;
 

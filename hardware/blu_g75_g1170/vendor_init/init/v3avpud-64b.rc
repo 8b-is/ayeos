@@ -1,0 +1,4 @@
+service v3avpud-64b /vendor/bin/v3avpud-64b -f
+    class main
+    user media
+    group system media drmrpc
