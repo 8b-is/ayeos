@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ayeOS v5.3.0 — Iceland (.is) Signature-Verified OTA Updater, USB Auto-Installer & Wi-Fi OTA Hub
+ayeOS v5.4.0 — Iceland (.is) Signature-Verified OTA Updater, USB Auto-Installer & Wi-Fi OTA Hub
 - Queries ONLY our sovereign Iceland (.is) servers for version checks & OS manifests:
   1. https://g8t.is/g8t/ota/blu-g75/manifest.json
   2. https://aye.is/g8t/ota/blu-g75/manifest.json
@@ -195,7 +195,7 @@ def poll_iceland_upstream_once(auto_flash_usb: bool = False) -> str:
     try:
         local_manifest = json.loads(open(MANIFEST_PATH, "r").read())
         local_sha = local_manifest.get("image_sha256_hex", "")
-        local_ver = local_manifest.get("version", "5.3.0")
+        local_ver = local_manifest.get("version", "5.4.0")
     except Exception:
         local_manifest = {}
         local_sha = ""
@@ -213,7 +213,7 @@ def poll_iceland_upstream_once(auto_flash_usb: bool = False) -> str:
             continue
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "ayeOS-Iceland-OTA-Verifier/5.3.0"}
+                url, headers={"User-Agent": "ayeOS-Iceland-OTA-Verifier/5.4.0"}
             )
             with urllib.request.urlopen(req, timeout=4) as resp:
                 remote_manifest = json.loads(resp.read().decode("utf-8"))
@@ -237,7 +237,7 @@ def poll_iceland_upstream_once(auto_flash_usb: bool = False) -> str:
                     continue
                 try:
                     ireq = urllib.request.Request(
-                        img_url, headers={"User-Agent": "ayeOS-Iceland-OTA-Verifier/5.3.0"}
+                        img_url, headers={"User-Agent": "ayeOS-Iceland-OTA-Verifier/5.4.0"}
                     )
                     with urllib.request.urlopen(ireq, timeout=8) as iresp:
                         img_bytes = iresp.read()
@@ -335,6 +335,6 @@ if __name__ == "__main__":
     t.start()
     srv = http.server.ThreadingHTTPServer(("0.0.0.0", 8788), OtaHttpHandler)
     print(
-        "🦀 [g8t.is / aye.is Iceland OTA Hub v5.3.0] Listening on 0.0.0.0:8788 (192.168.151.14:8788) + UDP :8888..."
+        "🦀 [g8t.is / aye.is Iceland OTA Hub v5.4.0] Listening on 0.0.0.0:8788 (192.168.151.14:8788) + UDP :8888..."
     )
     srv.serve_forever()

@@ -1,6 +1,6 @@
 [package]
 name = "ayeos-baremetal-mt6768"
-version = "5.3.0"
+version = "5.4.0"
 edition = "2021"
 description = "100% Bare-Metal #![no_std] #![no_main] Rust Kernel for BLU G75 (MediaTek Helio G81 / mt6768) — Zero Linux, Zero C, Zero Floats."
 
