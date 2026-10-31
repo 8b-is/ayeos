@@ -89,7 +89,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
     #[cfg(not(feature = "audio-report"))]
     let banner = "AYEOS studio-board4-r3 / USB EP0 READBACK (not CDC serial)";
     #[cfg(feature = "audio-report")]
-    let banner = "AYEOS studio-board5 / SmartPA ID probe + USB EP0";
+    let banner = "AYEOS studio-board5-r2 / SmartPA ID probe + USB EP0";
     board_line(base, stride, 0, banner);
     board_line(
         base,

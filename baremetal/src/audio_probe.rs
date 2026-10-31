@@ -13,6 +13,11 @@ pub const INFRA: usize = 0x1000_10ac; // MODULE_SW_CG_4, I2C4 bit7
 pub const PIN: usize = 0x1000_53d0; // GPIO104..111; 105/106 mode1 = SCL4/SDA4
 pub const BUDGET: u32 = 32_768; // work budget, NOT milliseconds
 pub const BYTES: usize = 192;
+// AP FIFO_STAT: count in bits7:4, not the low status flags. The low-five-bit
+// mask in the newer reference is used for its SCP channel, not this AP FIFO.
+fn fifo_count(status: u16) -> u16 {
+    (status >> 4) & 0x0f
+}
 // Saved configuration (not FIFO data, START, W1C status, or write-only strobes).
 pub const OFFSETS: [usize; 17] = [
     0x04, 0x08, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x28, 0x2c, 0x30, 0x34, 0x3c, 0x44, 0x48, 0x90, 0xe8,
@@ -101,9 +106,6 @@ fn probe(io: &mut impl Io, r: &mut Report) -> Status {
     if r.words[8] & 0x80 != 0 || r.words[9] & 0x80 != 0 {
         return Status::ClockOff;
     }
-    if (r.words[10] >> 4) & 0xff != 0x11 {
-        return Status::Pins;
-    }
     for (i, offset) in [0x24, 0x0c, 0xf4, 0xe4].into_iter().enumerate() {
         let value = io.read16(BASE + offset);
         if io.faulted() {
@@ -111,9 +113,8 @@ fn probe(io: &mut impl Io, r: &mut Report) -> Status {
         }
         r.words[11 + i] = u32::from(value);
     }
-    if r.words[11] & 1 != 0 || r.words[13] & 0x1f != 0 {
-        return Status::Busy;
-    }
+    // Snapshot configuration before bus/pin/config rejection. Clock-off or an
+    // MMIO fault still stops reads; never manufacture observations in that case.
     let mut saved = [0u16; 17];
     for (i, &offset) in OFFSETS.iter().enumerate() {
         saved[i] = io.read16(BASE + offset);
@@ -124,6 +125,12 @@ fn probe(io: &mut impl Io, r: &mut Report) -> Status {
     }
     if io.faulted() {
         return Status::Fault;
+    }
+    if (r.words[10] >> 4) & 0xff != 0x11 {
+        return Status::Pins;
+    }
+    if r.words[11] & 1 != 0 || fifo_count(r.words[13] as u16) != 0 {
+        return Status::Busy;
     }
     // TIMING nonzero, HS disabled, open-drain selected. Rate is inherited and
     // reported, not claimed to equal the FDT's requested 400kHz.
@@ -229,7 +236,7 @@ fn read_id(io: &mut impl Io, address: u16, out: &mut [u32]) -> Status {
             return Status::Nack;
         }
         if irq & 1 != 0 {
-            let fifo = io.read16(BASE + 0xf4) & 0x1f;
+            let fifo = fifo_count(io.read16(BASE + 0xf4));
             if io.faulted() {
                 return Status::Fault;
             }

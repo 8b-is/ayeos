@@ -179,12 +179,13 @@ impl Mock {
     fn ready() -> Self {
         let mut m = Self {
             result: 1,
-            fifo: 1,
+            fifo: 0x0110, // one RX byte; not a literal count register
             ..Self::default()
         };
         m.regs.insert(PIN, 0x110);
         m.regs.insert(BASE + 0x20, 0x10);
         m.regs.insert(BASE + 0x34, 3);
+        m.regs.insert(BASE + 0xf4, 0x2201); // captured empty AP FIFO state
         m
     }
     fn gate(&mut self) -> bool {
@@ -204,7 +205,7 @@ impl Mock {
             return 0;
         }
         if a == BASE {
-            self.regs.insert(BASE + 0xf4, 0);
+            self.regs.insert(BASE + 0xf4, 0x1101); // equal read/write pointers, empty
             return if self.starts == 1 { 0x39 } else { 0x59 };
         }
         *self.regs.get(&a).unwrap_or(&0)
@@ -228,12 +229,12 @@ impl Mock {
             self.regs.insert(BASE + 0xc, u32::from(self.result));
             self.regs.insert(BASE + 0xf4, u32::from(self.fifo));
         } else if a == BASE + 0x38 {
-            self.regs.insert(BASE + 0xf4, 0);
+            self.regs.insert(BASE + 0xf4, 1);
         } else if a == BASE + 0x50 {
             if !self.stuck_reset {
                 self.regs.insert(BASE + 0x24, 0);
             }
-            self.regs.insert(BASE + 0xf4, 0);
+            self.regs.insert(BASE + 0xf4, 1);
         } else if a != BASE {
             if !(self.drop_restore && a == BASE + 0x10 && v == 0) {
                 self.regs.insert(a, v);
@@ -322,7 +323,7 @@ fn missing_clocks_pins_or_inherited_config_never_start_a_transaction() {
         (INFRA, 0x80, Status::ClockOff),
         (PIN, 0, Status::Pins),
         (BASE + 0x24, 1, Status::Busy),
-        (BASE + 0xf4, 1, Status::Busy),
+        (BASE + 0xf4, 0x0110, Status::Busy),
         (BASE + 0x20, 0, Status::Config),
         (BASE + 0x30, 1, Status::Config),
         (BASE + 0x34, 0, Status::Config),
@@ -332,6 +333,11 @@ fn missing_clocks_pins_or_inherited_config_never_start_a_transaction() {
         let r = audio_probe::run(&mut m, &fixture(0));
         assert_eq!(r.words[4], status as u32);
         assert!(m.writes.is_empty());
+        if status != Status::ClockOff {
+            assert!(r.words[15..32].iter().all(|x| *x != u32::MAX));
+        } else {
+            assert!(r.words[11..32].iter().all(|x| *x == u32::MAX));
+        }
     }
 }
 #[test]
@@ -340,9 +346,9 @@ fn errors_stop_the_second_probe_and_restore_after_bounded_reset() {
         (0, 0, Status::Timeout),
         (2, 0, Status::Nack),
         (8, 0, Status::Arbitration),
-        (0x201, 1, Status::Controller),
-        (1, 0, Status::Fifo),
-        (1, 2, Status::Fifo),
+        (0x201, 0x0110, Status::Controller),
+        (1, 0x2201, Status::Fifo),
+        (1, 0x0220, Status::Fifo),
     ] {
         let mut m = Mock::ready();
         m.result = irq;
@@ -355,6 +361,47 @@ fn errors_stop_the_second_probe_and_restore_after_bounded_reset() {
         assert_eq!(r.words[42], 1);
         assert!(m.ops < (audio_probe::BUDGET as usize) + 300);
         assert!(m.writes.contains(&(16, BASE + 0x50, 1)));
+    }
+}
+#[test]
+fn captured_idle_state_and_ap_fifo_count_bits_drive_the_probe() {
+    let mut m = Mock::ready();
+    m.regs.insert(TOP, 0x01030202);
+    m.regs.insert(INFRA, 0);
+    m.regs.insert(PIN, 0x10000111);
+    m.regs.insert(BASE + 0x24, 0);
+    m.regs.insert(BASE + 0xc, 1); // inherited completion, source transaction unknown
+    m.regs.insert(BASE + 0xf4, 0x2201);
+    m.regs.insert(BASE + 0xe4, 0x0300);
+    let r = audio_probe::run(&mut m, &fixture(0));
+    assert_eq!(r.words[4], Status::Complete as u32);
+    assert_eq!(
+        &r.words[8..15],
+        &[0x01030202, 0, 0x10000111, 0, 1, 0x2201, 0x0300]
+    );
+    assert_eq!(m.starts, 2);
+    assert_eq!(r.words[35], 1);
+    assert_eq!(r.words[40], 1);
+    // Status and pointer bits must not enter the count, including count=8.
+    for (raw, count) in [
+        (0x0001, 0),
+        (0x2201, 0),
+        (0x0110, 1),
+        (0x7810, 1),
+        (0x0882, 8),
+    ] {
+        let mut m = Mock::ready();
+        m.fifo = raw;
+        let r = audio_probe::run(&mut m, &fixture(0));
+        assert_eq!(r.words[35], count);
+        assert_eq!(
+            r.words[4],
+            if count == 1 {
+                Status::Complete as u32
+            } else {
+                Status::Fifo as u32
+            }
+        );
     }
 }
 #[test]
