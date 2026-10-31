@@ -7,6 +7,14 @@ be established before the hotspot, speech and FM UI can truthfully become live.
 
 ## Current implementation
 
+**Board3 supersedes the stationary Board2 format:** complete allowlisted values
+are chunked across pages, advanced by a debounced keypad press/release. It adds
+parent bus context and provider-sized direct dependency lookup. See
+[SCREEN_BOARD3_HANDOFF.md](SCREEN_BOARD3_HANDOFF.md) for capture instructions,
+bounds and remaining hardware assumptions, and [PHONE_CONTROL_ROADMAP.md](PHONE_CONTROL_ROADMAP.md)
+for the planned owner-controlled network channel and second-stage loader.
+The following Board2 details document the previous capture format.
+
 **Board2 update:** four independent eight-property budgets now show audio/AFE,
 amplifier, connectivity and clock providers. Selection uses each node's own name
 or compatible value, never a matching PMIC ancestor. Reserved-memory and pinctrl
@@ -63,7 +71,7 @@ rustc --edition=2021 --test baremetal/tests/board_report.rs -o /tmp/opencode/aye
 cargo build --release --locked --features board-report
 llvm-objcopy -O binary target/aarch64-unknown-none/release/ayeos-baremetal-mt6768 /tmp/studio-board1.bin
 # Back at repository root; use a new output directory each time
-python3 scripts/package_bringup.py --kernel /tmp/studio-board1.bin --output target/board2
+python3 scripts/package_bringup.py --kernel /tmp/studio-board1.bin --output target/board3
 ```
 
 The package is a **development diagnostic image**, not a completed hotspot,

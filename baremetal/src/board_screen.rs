@@ -40,7 +40,7 @@ fn cell(value: &[u8]) -> Option<u32> {
 }
 
 // Classify the node itself, never all descendants of a PMIC or bus.
-fn category(text: &str) -> Option<usize> {
+pub(crate) fn category(text: &str) -> Option<usize> {
     if ["aw87", "amplifier", "speaker-amp"]
         .iter()
         .any(|s| text.contains(s))

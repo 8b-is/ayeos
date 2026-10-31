@@ -24,6 +24,8 @@ mod dashboard;
 mod device_tree;
 #[cfg(feature = "board-report")]
 mod board_screen;
+#[cfg(feature = "board-report")]
+mod board_pages;
 
 struct PhoneCanvas {
     base: usize,
@@ -96,28 +98,38 @@ impl dashboard::Canvas for PhoneCanvas {
 }
 
 #[cfg(feature = "board-report")]
-fn screen_board(address: u64, base: usize, stride: usize) -> ! {
-    use core::fmt::Write;
+fn clear_board_page(base: usize, stride: usize) {
     for y in 0..SCREEN_H {
         for x in 0..SCREEN_W { put_pixel(base, stride, x, y, 0xFF05060A); }
         pet_mediatek_watchdog();
     }
+}
+
+#[cfg(feature = "board-report")]
+fn board_line(base: usize, stride: usize, row: usize, text: &str) {
+    if row < 85 {
+        draw_text_opaque_scaled(base, stride, 20, 68 + row * 18, 1,
+            text, 0xFF62E6C9, 0xFF05060A, 76);
+    }
+    pet_mediatek_watchdog();
+}
+
+#[cfg(feature = "board-report")]
+fn screen_board(address: u64, base: usize, stride: usize) -> ! {
+    use core::fmt::Write;
+    clear_board_page(base, stride);
     let mut row = 0usize;
     let mut emit = |text: &str| {
-        if row < 85 {
-            draw_text_opaque_scaled(base, stride, 20, 68 + row * 18, 1,
-                text, 0xFF62E6C9, 0xFF05060A, 0);
-            row += 1;
-            flush_dcache_range(base, stride * SCREEN_H * 4);
-        }
-        pet_mediatek_watchdog();
+        board_line(base, stride, row, text); row += 1;
+        flush_dcache_range(base, stride * SCREEN_H * 4);
     };
-    emit("AYEOS 5.4.0-studio-board2 / SCREEN DIAGNOSTIC");
+    emit("AYEOS 5.4.0-studio-board3 / PAGED RESOURCE REPORT");
     let mut line = board_screen::Line::new();
     let _ = write!(line, "Entry x0={:016x} framebuffer={:016x} stride={}", address, base, stride);
     emit(line.text());
     emit("Memory readability requires bootloader ABI; faults are not validation.");
     emit("Stage: checking FDT header (if stuck here, report this photograph)");
+    emit("Release all volume keys while the keypad baseline is sampled.");
     if address < 0x4000_0000 || address > 0xFFFF_FFD8 || address & 7 != 0 {
         emit("FDT POINTER REJECTED: range or 8-byte alignment");
     } else {
@@ -134,7 +146,70 @@ fn screen_board(address: u64, base: usize, stride: usize) -> ! {
         } else {
             emit("Stage: parsing bounded FDT");
             let blob = unsafe { core::slice::from_raw_parts(address as *const u8, size) };
-            board_screen::resources(blob, &mut emit);
+            match board_pages::Inventory::build(blob) {
+                Ok(inventory) => {
+                    let (pages, capped) = inventory.page_count(blob);
+                    // The inherited keypad read returns zero on a skipped fault.
+                    // Treat zero/unstable calibration as unavailable, not success.
+                    let mut idle = safe_mmio_read16(KP_MEM1_ADDR);
+                    let mut stable = 0usize;
+                    for _ in 0..256 {
+                        pet_mediatek_watchdog(); frame_pacer_30hz();
+                        let sample = safe_mmio_read16(KP_MEM1_ADDR);
+                        if sample == idle && sample != 0 { stable += 1; }
+                        else { idle = sample; stable = 0; }
+                        if stable == 32 { break; }
+                    }
+                    if stable != 32 { idle = 0; }
+                    let mut key = board_pages::PageKey::new(idle);
+                    let mut page = 0;
+                    loop {
+                        clear_board_page(base, stride);
+                        board_line(base, stride, 0, "AYEOS 5.4.0-studio-board3 / PAGED RESOURCE REPORT");
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "PAGE {}/{} FDT bytes={} CRC32={:08x}", page + 1, pages, size, inventory.crc);
+                        board_line(base, stride, 1, line.text());
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "x0={:016x} framebuffer={:016x} stride={}", address, base, stride);
+                        board_line(base, stride, 2, line.text());
+                        board_line(base, stride, 3, "FDT PARSE OK - declarations; peripheral operation remains unverified");
+                        board_line(base, stride, 4, "HEX: R=record ID, +byte offset; CRC32 detects transcription errors");
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "Node overflow={} provider overflow={} duplicate handles={}",
+                            inventory.node_overflow, inventory.provider_overflow, inventory.duplicate_handles);
+                        board_line(base, stride, 5, line.text());
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "Unresolved={} malformed refs={} line cap={}", inventory.unresolved, inventory.malformed_refs, capped);
+                        board_line(base, stride, 6, line.text());
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "Keypad baseline={:04x}; boot mapping/read assumptions still apply", idle);
+                        board_line(base, stride, 7, line.text());
+                        board_line(base, stride, 8, "--------------------------------------------------------------------");
+                        let mut data_row = 9;
+                        inventory.render(blob, page, |text| {
+                            board_line(base, stride, data_row, text); data_row += 1;
+                        });
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "END PAGE {}/{} - photograph header, data and this footer", page + 1, pages);
+                        board_line(base, stride, 78, line.text());
+                        board_line(base, stride, 79, if idle == 0 { "Keypad unavailable: report this page; no automatic page advance" }
+                            else { "Hold a volume key briefly, then release: next page (wraps at end)" });
+                        board_line(base, stride, 80, "HOLD - no USB/radio/updater calls; key reads and watchdog only");
+                        flush_dcache_range(base, stride * SCREEN_H * 4);
+                        loop {
+                            pet_mediatek_watchdog(); frame_pacer_30hz();
+                            if key.sample(safe_mmio_read16(KP_MEM1_ADDR)) {
+                                page = if page + 1 == pages { 0 } else { page + 1 };
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    let mut line = board_screen::Line::new();
+                    let _ = write!(line, "FDT PARSE FAILED: {:?}", error); emit(line.text());
+                }
+            }
         }
     }
     emit("HOLD - watchdog only; no USB polling or button actions");

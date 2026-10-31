@@ -23,7 +23,7 @@ def package(kernel):
     struct.pack_into("<I", header, 16, (15 << 25) | (26 << 4) | 10)
     struct.pack_into("<I", header, 20, 1580)
     struct.pack_into("<I", header, 40, 4)
-    cmdline = b"ayeos.baremetal=v5.4.0-studio-board2 ayeos.board_report=1\0"
+    cmdline = b"ayeos.baremetal=v5.4.0-studio-board3 ayeos.board_report=1\0"
     header[44:44 + len(cmdline)] = cmdline
     return bytes(header) + compressed + bytes((-len(compressed)) % 4096)
 
@@ -37,9 +37,9 @@ def main():
         kernel = f.read(4 * 1024 * 1024 + 1)
     image = package(kernel)
     args.output.mkdir(parents=True, exist_ok=False)
-    (args.output / "studio-board2.img").write_bytes(image)
+    (args.output / "studio-board3.img").write_bytes(image)
     metadata = {
-        "development_build": "5.4.0-studio-board2",
+        "development_build": "5.4.0-studio-board3",
         "hardware_verified": False,
         "publisher_signature": None,
         "image_bytes": len(image),
