@@ -90,7 +90,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
         base,
         stride,
         0,
-        "AYEOS studio-board4 / USB EP0 READBACK (not CDC serial)",
+        "AYEOS studio-board4-r2 / USB EP0 READBACK (not CDC serial)",
     );
     board_line(
         base,
@@ -153,6 +153,19 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     board.soc, board.controller, board.phy, board.infra, board.top
                 );
                 board_line(base, stride, 4, line.text());
+                let mut line = board_screen::Line::new();
+                let _ = write!(
+                    line,
+                    "Seen PHY v1={} v2={} other USB/PHY bindings={}",
+                    board.phy_v1_seen, board.phy_v2_seen, board.other_bindings_seen
+                );
+                board_line(base, stride, 12, line.text());
+                board_line(
+                    base,
+                    stride,
+                    13,
+                    "MMIO requires verified v1 layout; v2 COM=port+300, not port+0",
+                );
                 board_line(
                     base,
                     stride,

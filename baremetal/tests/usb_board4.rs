@@ -428,6 +428,14 @@ impl Fdt {
     }
 }
 fn fixture(mode: u8) -> Vec<u8> {
+    fixture_bindings(
+        mode,
+        b"mediatek,mt6768-usb20\0",
+        b"mediatek,generic-tphy-v1\0",
+        None,
+    )
+}
+fn fixture_bindings(mode: u8, controller: &[u8], phy: &[u8], offset: Option<u32>) -> Vec<u8> {
     let mut f = Fdt {
         s: vec![],
         t: vec![],
@@ -454,7 +462,10 @@ fn fixture(mode: u8) -> Vec<u8> {
     }
     for _ in 0..if mode == 5 { 2 } else { 1 } {
         f.begin("usb0@11200000");
-        f.prop("compatible", b"mediatek,mt6768-usb20\0");
+        f.prop("compatible", controller);
+        if let Some(offset) = offset {
+            f.cells("usb_phy_offset", &[offset]);
+        }
         f.cells(
             "reg",
             &[0, 0x11200000, 0, 0x10000, 0, 0x11cc0000, 0, 0x10000],
@@ -463,7 +474,7 @@ fn fixture(mode: u8) -> Vec<u8> {
         f.end();
     }
     f.begin("usb-phy");
-    f.prop("compatible", b"mediatek,generic-tphy-v1\0");
+    f.prop("compatible", phy);
     f.cells("#address-cells", &[2]);
     f.cells("#size-cells", &[2]);
     f.prop("ranges", b"");
@@ -501,4 +512,115 @@ fn fdt_discovery_requires_soc_translation_enabled_nodes_and_linked_port() {
     for n in 0..blob.len() {
         assert!(usb_board::discover(&blob[..n]).is_err());
     }
+}
+
+#[test]
+fn gki_66_reference_binding_matches_and_conflicting_offset_stops() {
+    let controller = b"mediatek,mt6768-usb20\0";
+    let phy = b"mediatek,generic-tphy-v1\0";
+    let board = usb_board::discover(&fixture_bindings(0, controller, phy, Some(0x800))).unwrap();
+    assert!(board.ready());
+    assert_eq!((board.phy_v1_seen, board.phy_v2_seen), (1, 0));
+    // A specific compatible can precede an explicitly declared supported
+    // fallback. Bare module names alone cannot supply that fallback.
+    assert!(usb_board::discover(&fixture_bindings(
+        0,
+        b"mediatek,mt-usb\0mediatek,mt6768-usb20\0",
+        b"mediatek,mt6768-tphy\0mediatek,generic-tphy-v1\0",
+        Some(0x800)
+    ))
+    .unwrap()
+    .ready());
+    assert!(!usb_board::discover(&fixture_bindings(
+        0,
+        controller,
+        b"mediatek,generic-tphy-v2\0mediatek,generic-tphy-v1\0",
+        None
+    ))
+    .unwrap()
+    .ready());
+    let board = usb_board::discover(&fixture_bindings(0, controller, phy, Some(0x300))).unwrap();
+    let mut io = Mock::default();
+    assert_eq!(
+        usb_phy::initialize(&mut io, board.ready()),
+        usb_phy::Init::FdtMismatch
+    );
+    assert_eq!(io.ops, 0);
+}
+
+#[test]
+fn alternate_bindings_are_visible_without_aliasing_hardware_layouts() {
+    for controller in [
+        &b"mediatek,mt6768-usb20\0"[..],
+        b"mediatek,mt-usb\0",
+        b"mediatek,musb\0",
+    ] {
+        for phy in [
+            &b"mediatek,generic-tphy-v1\0"[..],
+            b"mediatek,generic-tphy-v2\0",
+            b"mediatek,mt6768-tphy\0",
+            b"mediatek,mt6768-phy\0",
+        ] {
+            let blob = fixture_bindings(0, controller, phy, None);
+            let board = usb_board::discover(&blob).unwrap();
+            let expected =
+                controller == b"mediatek,mt6768-usb20\0" && phy == b"mediatek,generic-tphy-v1\0";
+            assert_eq!(board.ready(), expected);
+            if !expected {
+                let mut io = Mock::default();
+                assert_eq!(
+                    usb_phy::initialize(&mut io, board.ready()),
+                    usb_phy::Init::FdtMismatch
+                );
+                assert_eq!(io.ops, 0);
+            }
+            let mut lines = Vec::new();
+            usb_board::summary(&blob, |s| lines.push(s.to_owned()));
+            let report = lines.join("\n");
+            assert!(
+                report.contains(core::str::from_utf8(&controller[..controller.len() - 1]).unwrap())
+            );
+            assert!(report.contains(core::str::from_utf8(&phy[..phy.len() - 1]).unwrap()));
+            assert!(report.contains("/soc/usb-phy/port/"));
+            assert!(lines.len() <= 49 && lines.iter().all(|s| s.len() <= 76));
+        }
+    }
+}
+
+#[test]
+fn fallback_prioritizes_core_identity_and_handles_late_compatible() {
+    let mut f = Fdt {
+        s: vec![],
+        t: vec![],
+    };
+    f.begin("");
+    // Helpers exceed the candidate budget before a controller appears.
+    for _ in 0..40 {
+        f.begin("usb-helper");
+        f.prop("compatible", b"vendor,usb-helper\0");
+        f.end();
+    }
+    f.begin("renamed-controller");
+    f.cells("reg", &[0, 0x11110000, 0, 0x1000]); // not a known-address heuristic
+    f.prop("status", b"okay\0");
+    f.prop("compatible", b"mediatek,musb\0");
+    f.prop("private", b"must-not-be-shown");
+    f.end();
+    f.begin("renamed-phy");
+    f.cells("reg", &[0, 0x11cc0000, 0, 0x800]);
+    f.prop("compatible", b"mediatek,generic-tphy-v2\0");
+    f.begin("lane@0");
+    f.cells("reg", &[0, 0x11cc0800, 0, 0x400]);
+    f.end();
+    f.end();
+    let mut lines = Vec::new();
+    usb_board::summary(&f.finish(), |s| lines.push(s.to_owned()));
+    assert_eq!(lines[0], "/renamed-controller/");
+    assert!(lines[1].contains("reg [16B] 00000000111100000000000000001000"));
+    let report = lines.join("\n");
+    assert!(report.contains("/renamed-phy/lane@0/"));
+    assert!(report.contains("mediatek,generic-tphy-v2"));
+    assert!(report.contains("nodes_lost=11"));
+    assert!(!report.contains("must-not-be-shown"));
+    assert_eq!(lines.len(), 49);
 }
