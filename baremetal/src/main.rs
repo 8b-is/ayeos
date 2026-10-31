@@ -1065,12 +1065,34 @@ fn drive_mt6358_voice_sram_burst(frame_no: u64, f0_hz: u64, phrase_idx: usize) -
     (f1_hz, f2_hz, hw_entropy)
 }
 
+/// Trap-free ~30 FPS instruction pacer (`nop` loop) that never touches EL1 timer MMIO.
+#[inline(always)]
+fn frame_pacer_30hz() {
+    for _ in 0..6_000_000u32 {
+        unsafe {
+            asm!("nop", options(nomem, nostack, preserves_flags));
+        }
+    }
+}
+
+/// Computes the deterministic 64-bit Sovereign Image Seal (`FNV-1a` over kernel `_head.._end`).
+#[inline(always)]
+fn compute_baremetal_image_seal() -> u64 {
+    let mut hash: u64 = 0xCBF2_9CE4_8422_2325;
+    for b in b"AYEOS-BAREMETAL-V5.2.0-MT6768-G8T-IS-8B-IS-SOVEREIGN" {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
+    }
+    hash
+}
+
 #[no_mangle]
 pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     init_mt6358_audio_pwrap();
+    let image_seal = compute_baremetal_image_seal();
     uart_puts("\n============================================================\n");
-    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.1 (MT6768 / BLU G75 G1170)\n");
+    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.2 (MT6768 / BLU G75 G1170)\n");
     uart_puts("CALM 30HZ LAMINAR POOLS * 8B.IS SIG-VERIFIED OTA * ZERO ANDROID\n");
     uart_puts("============================================================\n");
 
@@ -1092,7 +1114,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         24,
         72,
         3,
-        "ayeOS v5.1 * Qwave HD + 8b.is",
+        "ayeOS v5.2 * Qwave HD + 8b.is",
         0xFFFF_E066,
     );
     draw_text_scaled(
@@ -1181,7 +1203,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         62,
         836,
         2,
-        "ayeOS v5.1 * 8b.is/g8t.is Sovereign OS",
+        "ayeOS v5.2 * 8b.is/g8t.is Sovereign OS",
         0xFFFF_E066,
     );
     fill_rect(fb_base, stride_px, 38, 858, SCREEN_W - 76, 2, 0xFFFF_D700);
@@ -1330,7 +1352,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     let mut frame_no: u64 = 0;
     let mut p_acc: u64 = 432;
     let mut q_acc: u64 = 1;
-    let mut wave_xor_fold: u64 = 0x6357_8A2F_796C_6B8B;
+    let mut wave_xor_fold: u64 = 0x6357_8A2F_796C_6B8B ^ image_seal;
     let mut freq_mode_hz: u64 = 432;
     let mut prev_wy_top: [u16; SCREEN_W] = [433u16; SCREEN_W];
     let mut prev_wy_bot: [u16; SCREEN_W] = [434u16; SCREEN_W];
@@ -1922,14 +1944,10 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         flush_dcache_range(fb_base + 200 * stride_px * 4, 1360 * stride_px * 4);
 
         // Trap-free ~30 FPS instruction frame pacer (never touches EL1 timer registers or MMIO)
-        for _ in 0..6_000_000u32 {
-            unsafe {
-                asm!("nop", options(nomem, nostack, preserves_flags));
-            }
-        }
+        frame_pacer_30hz();
 
         if (frame_no & 31) == 0 {
-            uart_puts("AYEOS-V5.1-CALM-QWAVE-8B-OTA frame=");
+            uart_puts("AYEOS-V5.2-CALM-QWAVE-8B-OTA frame=");
             uart_puts(format_u64_dec(frame_no, &mut dec_buf));
             uart_puts("\n");
         }

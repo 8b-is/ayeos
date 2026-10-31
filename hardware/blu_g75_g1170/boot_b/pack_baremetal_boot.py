@@ -4,7 +4,7 @@ import json
 import os
 import struct
 
-BOOT_DIR = "/home/hue/8b-is/ayeos/hardware/blu_g75_g1170/boot_b"
+BOOT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(BOOT_DIR, "ayeos_baremetal.bin.gz"), "rb") as f:
     kernel_gz = f.read()
 
@@ -20,7 +20,7 @@ os_version = (15 << 25) | (26 << 4) | 10
 struct.pack_into("<I", hdr, 16, os_version)
 struct.pack_into("<I", hdr, 20, 1580)
 struct.pack_into("<I", hdr, 40, 4)
-cmdline = b"ayeos.baremetal=v5.1.0 ayeos.android=0 ayeos.ota=g8t.is\x00"
+cmdline = b"ayeos.baremetal=v5.2.0 ayeos.android=0 ayeos.ota=g8t.is\x00"
 hdr[44:44 + len(cmdline)] = cmdline
 
 pad_len = (PAGE_SIZE - (len(kernel_gz) % PAGE_SIZE)) % PAGE_SIZE
@@ -34,7 +34,7 @@ sha256_hex = hashlib.sha256(img).hexdigest()
 blake2s_hex = hashlib.blake2s(img).hexdigest()
 sig_material = (
     b"G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1:"
-    b"aye-sovereign-founder:blu-g75-g1170:5.1.0:"
+    b"aye-sovereign-founder:blu-g75-g1170:5.2.0:"
     + sha256_hex.encode("ascii")
 )
 sig_hex = hashlib.sha256(sig_material).hexdigest()
@@ -42,7 +42,7 @@ sig_hex = hashlib.sha256(sig_material).hexdigest()
 manifest = {
     "device_slug": "blu-g75-g1170",
     "os_name": "ayeOS Bare-Metal Rust Kernel (Zero Android / Zero Linux)",
-    "version": "5.1.0",
+    "version": "5.2.0",
     "resonance_hz": 432,
     "image_size_bytes": len(img),
     "gzip_kernel_bytes": len(kernel_gz),

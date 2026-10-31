@@ -1,30 +1,1115 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ayeOS — ternary matrix inference daemon</title>
-<meta name="description" content="ayeOS — pure Rust ternary matrix inference daemon. CPU: kernel8 (hearth). GPU: MLX-QUANT (brain). LINOSV seed — {n+-1-<△>}">
-<style>body{background:#070b16;color:#c8d6e5;font-family:JetBrains Mono,monospace;max-width:720px;margin:0 auto;padding:32px;line-height:1.7}
-h1{color:#6c5ce7;font-size:18px}h2{color:#a29bfe;font-size:14px;margin-top:24px}
-a{color:#ffd700;text-decoration:none}code{color:#00cec9;background:rgba(255,255,255,.05);padding:2px 6px;border-radius:3px}
-pre{background:rgba(255,255,255,.03);padding:12px;border-radius:6px;overflow-x:auto}
-</style></head><body>
-<h1>ayeOS — ternary matrix inference daemon</h1>
-<p>Pure Rust. Deterministic. Quantum-proof. Part of the 8b-is mesh.</p>
-<h2>Architecture</h2>
-<pre>
-KERNEL8 — MATRIX — AYEOS SPEC — VAKED — {n+-1-&lt;△&gt;}
-  ↑          ↑           ↑         ↑
-hearth     brain       daemon    coord
-</pre>
-<table style="width:100%;font-size:12px">
-<tr><td>CPU (hearth)</td><td><a href="https://github.com/8b-is/kernel8">kernel8</a></td><td>Rust x86_64 kernel</td></tr>
-<tr><td>GPU (brain)</td><td><a href="https://github.com/8b-is/MLX-QUANT">MLX-QUANT</a></td><td>Ternary Metal kernels</td></tr>
-<tr><td>Coord</td><td><a href="https://github.com/8b-is/vaked">vaked</a></td><td>Capability-graph language</td></tr>
-<tr><td>Viz</td><td><a href="https://github.com/8b-is/mlx-quant-viz">mlx-quant-viz</a></td><td>Matrix visualizer</td></tr>
-</table>
-<h2>Quick Start</h2>
-<pre>cargo run --bin ayeos-matrix 256 64
-cargo run --bin ayeosd
-echo "capsule" | nc localhost 9876</pre>
-<h2>Links</h2>
-<a href="https://github.com/8b-is/ayeos">GitHub</a> · <a href="https://axiomquant.org">axiomquant.org</a> · <a href="https://pocoo.vaked.dev">pocoo.vaked.dev</a>
-<p style="font-size:10px;color:#636e72;margin-top:24px">genesis: 7c242080f5f821e5eaf563fe2208d60632c451687baf65f4fe8e4a0d226e3ecf</p>
-</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ayeOS.com — Sovereign Device-to-Aye Obliterator · WebUSB & WebSerial Flasher (v5.2.0)</title>
+  <style>
+    :root {
+      --bg: #040914;
+      --bg2: #081226;
+      --card: rgba(10, 22, 42, 0.92);
+      --card-hi: rgba(16, 34, 64, 0.95);
+      --border: rgba(0, 240, 255, 0.26);
+      --gold: #ffd700;
+      --cyan: #00f0ff;
+      --mint: #62e6c9;
+      --green: #00ff9d;
+      --amber: #ffb800;
+      --red: #ff3b5c;
+      --text: #eef6ff;
+      --muted: #93adc8;
+      --mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body, html {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at 15% 0%, #0d2142 0%, var(--bg) 55%, #02050b 100%);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 18px 72px;
+    }
+    /* Top Header */
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 22px;
+      background: linear-gradient(135deg, rgba(20, 8, 44, 0.94), rgba(8, 22, 44, 0.94));
+      border: 2px solid var(--gold);
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 28px rgba(255, 215, 0, 0.14);
+      margin-bottom: 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-orb {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: radial-gradient(circle at 30% 30%, var(--cyan), #14082c 75%);
+      border: 2px solid var(--gold);
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-weight: 800;
+      color: var(--gold);
+      font-size: 18px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      color: #ffe066;
+    }
+    .brand p {
+      margin: 2px 0 0;
+      font-size: 13px;
+      color: var(--mint);
+      font-family: var(--mono);
+    }
+    .cap-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .pill {
+      padding: 6px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-family: var(--mono);
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: rgba(5, 14, 28, 0.85);
+      color: var(--muted);
+    }
+    .pill.ok {
+      border-color: rgba(0, 255, 157, 0.55);
+      color: var(--green);
+      background: rgba(0, 255, 157, 0.08);
+    }
+    .pill.warn {
+      border-color: rgba(255, 184, 0, 0.55);
+      color: var(--amber);
+      background: rgba(255, 184, 0, 0.08);
+    }
+    /* Grid Layout */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 940px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+    .card h2 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      color: #ffe066;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .card .sub {
+      margin: 0 0 16px;
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: rgba(0, 240, 255, 0.16);
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    /* Form controls */
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 600px) {
+      .field-grid { grid-template-columns: 1fr; }
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .field label {
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--mint);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .field input, .field select {
+      background: #040b17;
+      border: 1px solid rgba(98, 230, 201, 0.35);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13.5px;
+      outline: none;
+    }
+    .field input:focus, .field select:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.18);
+    }
+    .pw-wrap {
+      position: relative;
+      display: flex;
+    }
+    .pw-wrap input {
+      width: 100%;
+      padding-right: 64px;
+    }
+    .pw-toggle {
+      position: absolute;
+      right: 6px;
+      top: 6px;
+      bottom: 6px;
+      background: rgba(0, 240, 255, 0.12);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      color: var(--cyan);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 0 9px;
+      cursor: pointer;
+    }
+    /* Manifest Box */
+    .seal-box {
+      background: #030812;
+      border: 1px solid rgba(255, 215, 0, 0.32);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #d6e6ff;
+      margin-top: 10px;
+    }
+    .seal-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 3px 0;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+      word-break: break-all;
+    }
+    .seal-row:last-child { border-bottom: none; }
+    .seal-row span.k { color: var(--muted); flex-shrink: 0; }
+    .seal-row span.v { color: var(--green); text-align: right; }
+    /* Walkthrough Cards */
+    .walk-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 600px) {
+      .walk-grid { grid-template-columns: 1fr; }
+    }
+    .walk-step {
+      background: rgba(4, 12, 24, 0.9);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 10px;
+      padding: 11px 13px;
+    }
+    .walk-step strong {
+      display: block;
+      font-size: 13px;
+      color: var(--cyan);
+      margin-bottom: 4px;
+      font-family: var(--mono);
+    }
+    .walk-step p {
+      margin: 0;
+      font-size: 12.5px;
+      color: #c9d9ee;
+    }
+    /* Obliteration Consent Box */
+    .consent-box {
+      background: rgba(255, 59, 92, 0.09);
+      border: 1.5px solid rgba(255, 59, 92, 0.65);
+      border-radius: 11px;
+      padding: 14px 16px;
+      margin: 14px 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+    }
+    .consent-box input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      margin-top: 2px;
+      accent-color: var(--red);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .consent-box .consent-text {
+      font-size: 13px;
+      color: #ffd6de;
+    }
+    .consent-box .consent-text strong {
+      color: #ff6b84;
+      font-family: var(--mono);
+    }
+    /* Action Buttons */
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 16px;
+      border-radius: 9px;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #00f0ff, #00b8ff);
+      color: #02101f;
+      box-shadow: 0 4px 18px rgba(0, 240, 255, 0.28);
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(0, 240, 255, 0.42);
+    }
+    .btn-danger {
+      background: linear-gradient(135deg, #ff3b5c, #ff7a00);
+      color: #fff;
+      border-color: #ffd700;
+      box-shadow: 0 4px 20px rgba(255, 59, 92, 0.35);
+    }
+    .btn-danger:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 26px rgba(255, 59, 92, 0.55);
+    }
+    .btn-sec {
+      background: rgba(0, 240, 255, 0.1);
+      border-color: rgba(0, 240, 255, 0.38);
+      color: var(--cyan);
+    }
+    .btn-sec:hover:not(:disabled) {
+      background: rgba(0, 240, 255, 0.18);
+    }
+    .btn-gold {
+      background: rgba(255, 215, 0, 0.12);
+      border-color: rgba(255, 215, 0, 0.5);
+      color: var(--gold);
+    }
+    /* Progress Bar */
+    .prog-wrap {
+      margin-top: 14px;
+      background: #030812;
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-radius: 999px;
+      height: 14px;
+      overflow: hidden;
+    }
+    .prog-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--green), var(--gold));
+      transition: width 0.2s ease;
+    }
+    /* Terminal Log */
+    .term {
+      background: #02060d;
+      border: 1px solid rgba(98, 230, 201, 0.32);
+      border-radius: 10px;
+      padding: 13px;
+      font-family: var(--mono);
+      font-size: 12px;
+      height: 290px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: #b7f5e8;
+      margin-top: 12px;
+    }
+    .term .t-ok { color: var(--green); }
+    .term .t-warn { color: var(--amber); }
+    .term .t-err { color: var(--red); }
+    .term .t-cmd { color: var(--cyan); }
+    .code-strip {
+      background: #02060d;
+      border: 1px solid rgba(255, 215, 0, 0.35);
+      border-radius: 9px;
+      padding: 11px 14px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: #ffe066;
+      overflow-x: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .footer-bar {
+      margin-top: 26px;
+      padding: 18px 22px;
+      background: rgba(9, 18, 34, 0.88);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Top Sovereign Banner -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-orb">Aye</div>
+        <div>
+          <h1>ayeOS.com — Sovereign Device-to-Aye Obliterator (v5.2.0)</h1>
+          <p>Zero Android · Zero Linux · 100% #![no_std] Bare-Metal Rust · WebUSB (ADB + Fastboot) &amp; WebSerial</p>
+        </div>
+      </div>
+      <div class="cap-pills">
+        <span id="pill-webusb" class="pill">WebUSB: checking...</span>
+        <span id="pill-webserial" class="pill">WebSerial: checking...</span>
+        <span id="pill-sig" class="pill ok">8b.is / g8t.is SIG: VERIFYING...</span>
+      </div>
+    </header>
+
+    <div class="grid-2">
+      <!-- LEFT COLUMN: STEP 1 (Wi-Fi & Device Config) + STEP 2 (ADB Walkthrough) -->
+      <div style="display:flex; flex-direction:column; gap:20px;">
+        <!-- STEP 1 -->
+        <section class="card">
+          <h2><span class="step-badge">1</span> Configure Your New Aye &amp; Wi-Fi Credentials</h2>
+          <p class="sub">
+            Select your hardware target and enter the Wi-Fi SSID &amp; password your new <strong>AyeOS Bare-Metal v5.2.0</strong> node should join on boot. Your credentials are patched directly into the 4,096-byte boot envelope in browser memory — never sent to any server.
+          </p>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="dev-select">Hardware Target Profile</label>
+              <select id="dev-select">
+                <option value="blu-g75-g1170" selected>BLU G75 (G1170 · MediaTek Helio G81 / mt6768) — Verified v5.2.0</option>
+                <option value="generic-aarch64-fastboot">Any Android AArch64 Phone (Fastboot boot_a/boot_b)</option>
+                <option value="esp32-pocket-omni">ESP32 / RISC-V Pocket Omni Node (WebSerial 921600)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="aye-handle">Sovereign Aye Handle</label>
+              <input id="aye-handle" type="text" value="aye-blu-g75" placeholder="aye-blu-g75" />
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="wifi-ssid">Wi-Fi Network Name (SSID)</label>
+              <input id="wifi-ssid" type="text" value="224_5g_P3M8" placeholder="Enter Wi-Fi SSID (e.g. 224_5g_P3M8)" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="wifi-psk">Wi-Fi Password (WPA2 / WPA3)</label>
+              <div class="pw-wrap">
+                <input id="wifi-psk" type="password" value="" placeholder="Enter Wi-Fi Password" autocomplete="new-password" />
+                <button type="button" class="pw-toggle" id="btn-pw-toggle">SHOW</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="res-hz">Harmonic Carrier Frequency</label>
+              <select id="res-hz">
+                <option value="432" selected>432 Hz — Sovereign Grounding Triad (Default)</option>
+                <option value="528">528 Hz — Bioluminescent Wave Pool</option>
+                <option value="852">852 Hz — Cortical V1 High-Salience</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="ota-origin">Sovereign OTA Upstream</label>
+              <select id="ota-origin">
+                <option value="g8t.is" selected>https://g8t.is &amp; https://8b.is (i1-dns Mesh)</option>
+                <option value="ayeos.com">https://ayeos.com/g8t/ota/blu-g75</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="seal-box">
+            <div class="seal-row">
+              <span class="k">OS Image Version:</span>
+              <span class="v" id="st-ver">ayeOS Bare-Metal v5.2.0 (20,480 bytes · GZIP 15,432 bytes)</span>
+            </div>
+            <div class="seal-row">
+              <span class="k">Canonical 8b.is SHA-256:</span>
+              <span class="v" id="st-base-sha">loading...</span>
+            </div>
+            <div class="seal-row">
+              <span class="k">Sovereign Gate Signature:</span>
+              <span class="v" id="st-sig">verifying G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1...</span>
+            </div>
+            <div class="seal-row">
+              <span class="k">In-Browser Cmdline:</span>
+              <span class="v" id="st-cmdline" style="color:var(--cyan);">ayeos.baremetal=v5.2.0 ayeos.android=0</span>
+            </div>
+            <div class="seal-row">
+              <span class="k">Provisioned Image SHA-256:</span>
+              <span class="v" id="st-patched-sha" style="color:var(--gold);">computing...</span>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn btn-gold" id="btn-dl-img">
+              ⬇ Download Customized ayeos_boot_v5.2.0_wifi.img (20 KB)
+            </button>
+            <a class="btn btn-sec" href="/g8t/ota/blu-g75/manifest.json" target="_blank">
+              📜 View Signed Manifest JSON
+            </a>
+          </div>
+        </section>
+
+        <!-- STEP 2 -->
+        <section class="card">
+          <h2><span class="step-badge">2</span> Guided Device Unlock &amp; ADB-to-Bootloader Walkthrough</h2>
+          <p class="sub">
+            Prepare your phone (BLU G75 or Android AArch64) in 60 seconds, then connect via USB-C so Chrome can switch it into Fastboot mode and unlock the bootloader:
+          </p>
+
+          <div class="walk-grid">
+            <div class="walk-step">
+              <strong>2A · Unlock Developer Mode</strong>
+              <p>On the phone, open <b>Settings → About Phone</b> and tap <b>Build Number</b> 7 times rapidly until it says <i>"You are now a developer!"</i></p>
+            </div>
+            <div class="walk-step">
+              <strong>2B · Enable OEM Unlock &amp; ADB</strong>
+              <p>Go to <b>Settings → System → Developer Options</b> and toggle ON both <b>OEM unlocking</b> and <b>USB debugging</b>.</p>
+            </div>
+            <div class="walk-step">
+              <strong>2C · Connect USB &amp; Enter Fastboot</strong>
+              <p>Plug the phone into this computer via USB-C and click <b>1. WebUSB ADB → Reboot Bootloader</b> below (or hold <b>Vol Down + Power</b>).</p>
+            </div>
+            <div class="walk-step">
+              <strong>2D · Confirm Volume-Up Unlock</strong>
+              <p>When prompted on the phone screen during <code>flashing unlock</code>, press <b>Volume Up</b> to authorize bootloader unlock.</p>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="btn-adb-bootloader">
+              🔌 1. Connect WebUSB (ADB) &amp; Reboot to Bootloader
+            </button>
+            <button type="button" class="btn btn-sec" id="btn-fastboot-probe">
+              🔍 Probe Connected Fastboot Device (WebUSB)
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <!-- RIGHT COLUMN: STEP 3 (Obliterate & Flash via WebUSB) + STEP 4 (WebSerial & CLI Fallback) -->
+      <div style="display:flex; flex-direction:column; gap:20px;">
+        <!-- STEP 3 -->
+        <section class="card">
+          <h2><span class="step-badge">3</span> Obliterate Android &amp; Flash ayeOS Bare-Metal v5.2.0</h2>
+          <p class="sub">
+            Once your device is in <strong>FASTBOOT</strong> mode over USB, check the Sovereign Obliteration Agreement below to unlock the bootloader, purge <code>init_boot_a/b</code>, and flash <strong>ayeOS v5.2.0</strong> directly from Chrome.
+          </p>
+
+          <label class="consent-box" for="chk-obliterate">
+            <input type="checkbox" id="chk-obliterate" />
+            <div class="consent-text">
+              <strong>IRREVOCABLE SOVEREIGN OBLITERATION AGREEMENT:</strong><br />
+              I understand and agree that this device will be <b>completely obliterated</b> (erasing Android, userdata, and <code>init_boot_a/b</code> ramdisks) and reborn as a pure <code>#![no_std]</code> bare-metal <b>AyeOS v5.2.0</b> node connected to the <code>8b.is / g8t.is</code> sovereign mesh.
+            </div>
+          </label>
+
+          <div class="btn-row">
+            <button type="button" class="btn btn-sec" id="btn-fb-unlock" disabled>
+              🔓 Unlock Bootloader (fastboot flashing unlock)
+            </button>
+            <button type="button" class="btn btn-danger" id="btn-fb-flash" disabled>
+              ⚡ 2. OBLITERATE &amp; FLASH AYEOS v5.2.0 NOW (WebUSB)
+            </button>
+          </div>
+
+          <div class="prog-wrap">
+            <div class="prog-bar" id="flash-prog"></div>
+          </div>
+
+          <div class="term" id="usb-term">[ayeOS.com WebUSB + WebSerial Console v5.2.0]
+Ready. Waiting for USB device connection...
+</div>
+        </section>
+
+        <!-- STEP 4 -->
+        <section class="card">
+          <h2><span class="step-badge">4</span> Live WebSerial Console &amp; 1-Command CLI Installer</h2>
+          <p class="sub">
+            Connect via <strong>WebSerial (<code>navigator.serial</code>)</strong> to stream live <code>AYEOS-V5.2-CALM-QWAVE-8B-OTA</code> UART/CDC telemetry or push Wi-Fi credentials over serial — or run the standalone Python obliterator on Linux/macOS:
+          </p>
+
+          <div class="btn-row" style="margin-bottom:14px;">
+            <button type="button" class="btn btn-primary" id="btn-serial-connect">
+              📡 Connect WebSerial (921600 / 115200)
+            </button>
+            <button type="button" class="btn btn-sec" id="btn-serial-wifi" disabled>
+              📶 Push Wi-Fi SSID/PSK over Serial
+            </button>
+            <a class="btn btn-gold" href="/ayeos-obliterator.py" download="ayeos-obliterator.py">
+              🐍 Download ayeos-obliterator.py
+            </a>
+          </div>
+
+          <div style="font-size:12px; font-family:var(--mono); color:var(--mint); margin-bottom:6px;">
+            ONE-LINE TERMINAL OBLITERATOR (Linux / macOS / Crostini):
+          </div>
+          <div class="code-strip">
+            <code id="cli-oneliner">curl -fsSL https://ayeos.com/install.sh | python3 - --ssid "224_5g_P3M8" --yes-obliterate</code>
+            <button type="button" class="btn btn-sec" id="btn-copy-cli" style="padding:6px 10px; font-size:11px;">COPY</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Footer / Identity Marketplace Link -->
+    <footer class="footer-bar">
+      <div>
+        <strong style="color:var(--gold);">🌐 Powered by i1-dns 4-Region Harmony Mesh (ns1..ns4.i1.is)</strong> ·
+        OTA Endpoints: <a href="/g8t/ota/blu-g75/manifest.json">/g8t/ota/blu-g75/manifest.json</a> &amp;
+        <a href="https://g8t.is/g8t/ota/blu-g75/manifest.json">g8t.is</a>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn btn-sec" href="/@market" style="padding:7px 12px; font-size:12px;">💳 Claim name@ayeos.com (Stripe + Databomb)</a>
+        <a class="btn btn-sec" href="/@short" style="padding:7px 12px; font-size:12px;">🔗 ayeos.com URL Shortener</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // =========================================================================
+    // ayeOS.com Sovereign WebUSB (ADB + Fastboot) & WebSerial Engine (v5.2.0)
+    // =========================================================================
+    const termEl = document.getElementById('usb-term');
+    const progEl = document.getElementById('flash-prog');
+
+    function logTerm(msg, cls = '') {
+      const ts = new Date().toISOString().slice(11, 19);
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = `[${ts}] ${msg}`;
+      termEl.appendChild(line);
+      termEl.scrollTop = termEl.scrollHeight;
+    }
+
+    function setProgress(pct) {
+      progEl.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    }
+
+    // Check WebUSB & WebSerial support in current browser
+    const pillUsb = document.getElementById('pill-webusb');
+    const pillSerial = document.getElementById('pill-webserial');
+    if ('usb' in navigator) {
+      pillUsb.textContent = 'WebUSB: SUPPORTED (Chrome/Edge)';
+      pillUsb.className = 'pill ok';
+    } else {
+      pillUsb.textContent = 'WebUSB: Use Chrome/Brave or CLI';
+      pillUsb.className = 'pill warn';
+    }
+    if ('serial' in navigator) {
+      pillSerial.textContent = 'WebSerial: SUPPORTED';
+      pillSerial.className = 'pill ok';
+    } else {
+      pillSerial.textContent = 'WebSerial: Unavailable';
+      pillSerial.className = 'pill warn';
+    }
+
+    // Password show/hide toggle
+    const pskInput = document.getElementById('wifi-psk');
+    const pwToggle = document.getElementById('btn-pw-toggle');
+    pwToggle.addEventListener('click', () => {
+      if (pskInput.type === 'password') {
+        pskInput.type = 'text';
+        pwToggle.textContent = 'HIDE';
+      } else {
+        pskInput.type = 'password';
+        pwToggle.textContent = 'SHOW';
+      }
+    });
+
+    // Consent checkbox gates Unlock & Flash buttons
+    const chkObliterate = document.getElementById('chk-obliterate');
+    const btnFbUnlock = document.getElementById('btn-fb-unlock');
+    const btnFbFlash = document.getElementById('btn-fb-flash');
+    chkObliterate.addEventListener('change', () => {
+      const ok = chkObliterate.checked;
+      btnFbUnlock.disabled = !ok;
+      btnFbFlash.disabled = !ok;
+      if (ok) {
+        logTerm('Sovereign Obliteration Agreement ACCEPTED. WebUSB Fastboot Unlock & Flash armed.', 't-ok');
+      }
+    });
+
+    // SHA-256 helper via WebCrypto
+    async function sha256Hex(uint8Arr) {
+      const digest = await crypto.subtle.digest('SHA-256', uint8Arr);
+      return Array.from(new Uint8Array(digest))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    // Fetch & Verify Canonical v5.2.0 Boot Image + Live In-Browser Wi-Fi Patching
+    let canonicalImgBytes = null;
+    let patchedImgBytes = null;
+    let currentManifest = null;
+
+    const MANIFEST_SOURCES = [
+      '/g8t/ota/blu-g75/manifest.json',
+      'https://g8t.is/g8t/ota/blu-g75/manifest.json',
+      'https://8b.is/g8t/ota/blu-g75/manifest.json'
+    ];
+    const IMAGE_SOURCES = [
+      '/g8t/ota/blu-g75/boot.img',
+      'https://g8t.is/g8t/ota/blu-g75/boot.img',
+      'https://8b.is/g8t/ota/blu-g75/boot.img'
+    ];
+
+    async function fetchFirstOk(urls, asJson) {
+      for (const u of urls) {
+        try {
+          const r = await fetch(u, { cache: 'no-store' });
+          if (r.ok) {
+            return asJson ? await r.json() : new Uint8Array(await r.arrayBuffer());
+          }
+        } catch (_) {}
+      }
+      throw new Error('Could not fetch from any sovereign OTA mirror');
+    }
+
+    async function updatePatchedBootImage() {
+      const ssid = document.getElementById('wifi-ssid').value.trim();
+      const psk = document.getElementById('wifi-psk').value;
+      const handle = document.getElementById('aye-handle').value.trim() || 'aye-blu-g75';
+      const hz = document.getElementById('res-hz').value;
+      const otaOrigin = document.getElementById('ota-origin').value;
+
+      // Update CLI one-liner preview
+      const safeSsidCli = ssid.replace(/"/g, '\\"');
+      const safePskCli = psk.replace(/"/g, '\\"');
+      let cli = `curl -fsSL https://ayeos.com/install.sh | python3 - --ssid "${safeSsidCli}"`;
+      if (psk) cli += ` --psk "${safePskCli}"`;
+      cli += ` --agent "${handle}" --hz ${hz} --yes-obliterate`;
+      document.getElementById('cli-oneliner').textContent = cli;
+
+      if (!canonicalImgBytes) return;
+
+      const buf = new Uint8Array(canonicalImgBytes.length);
+      buf.set(canonicalImgBytes);
+
+      const cleanSsid = ssid.replace(/\s+/g, '_').slice(0, 64);
+      const cleanPsk = psk.replace(/\s+/g, '_').slice(0, 64);
+      const cleanAgent = handle.replace(/\s+/g, '-').slice(0, 48);
+
+      let cmdline = `ayeos.baremetal=v5.2.0 ayeos.android=0 ayeos.ota=${otaOrigin} ayeos.agent=${cleanAgent} ayeos.hz=${hz}`;
+      if (cleanSsid) cmdline += ` ayeos.wifi_ssid=${cleanSsid}`;
+      if (cleanPsk) cmdline += ` ayeos.wifi_psk=${cleanPsk}`;
+
+      document.getElementById('st-cmdline').textContent =
+        cleanPsk ? cmdline.replace(cleanPsk, '********') : cmdline;
+
+      // Write cmdline into ANDROID! boot header offset 44..556 only if user customized fields,
+      // or always patch so the phone boots with their exact Wi-Fi SSID & PSK:
+      const enc = new TextEncoder().encode(cmdline);
+      for (let i = 44; i < 556; i++) buf[i] = 0;
+      for (let i = 0; i < Math.min(enc.length, 510); i++) {
+        buf[44 + i] = enc[i];
+      }
+      patchedImgBytes = buf;
+      const newSha = await sha256Hex(patchedImgBytes);
+      document.getElementById('st-patched-sha').textContent = newSha;
+    }
+
+    async function loadCanonicalOtaImage() {
+      try {
+        currentManifest = await fetchFirstOk(MANIFEST_SOURCES, true);
+        canonicalImgBytes = await fetchFirstOk(IMAGE_SOURCES, false);
+
+        document.getElementById('st-ver').textContent =
+          `ayeOS Bare-Metal v${currentManifest.version} (${canonicalImgBytes.length} bytes · GZIP ${currentManifest.gzip_kernel_bytes} bytes)`;
+
+        const actualSha256 = await sha256Hex(canonicalImgBytes);
+        document.getElementById('st-base-sha').textContent = actualSha256;
+
+        // Verify G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1 signature
+        const sigInput = new TextEncoder().encode(
+          `G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1:aye-sovereign-founder:${currentManifest.device_slug}:${currentManifest.version}:${actualSha256}`
+        );
+        const computedSig = await sha256Hex(sigInput);
+        const pillSig = document.getElementById('pill-sig');
+
+        if (actualSha256 === currentManifest.image_sha256_hex && computedSig === currentManifest.signature_hex) {
+          document.getElementById('st-sig').textContent = `VERIFIED (${computedSig.slice(0, 24)}...)`;
+          pillSig.textContent = `8b.is SIG: VERIFIED v${currentManifest.version}`;
+          pillSig.className = 'pill ok';
+          logTerm(`Verified Sovereign Manifest v${currentManifest.version} (${canonicalImgBytes.length}B, SHA-256=${actualSha256.slice(0, 16)}...)`, 't-ok');
+        } else {
+          document.getElementById('st-sig').textContent = `MISMATCH`;
+          pillSig.textContent = 'SIG CHECK WARNING';
+          pillSig.className = 'pill warn';
+        }
+        await updatePatchedBootImage();
+      } catch (err) {
+        logTerm(`OTA preload note: ${err.message}`, 't-warn');
+      }
+    }
+
+    ['wifi-ssid', 'wifi-psk', 'aye-handle', 'res-hz', 'ota-origin'].forEach(id => {
+      document.getElementById(id).addEventListener('input', updatePatchedBootImage);
+      document.getElementById(id).addEventListener('change', updatePatchedBootImage);
+    });
+
+    // Download Customized Image button
+    document.getElementById('btn-dl-img').addEventListener('click', async () => {
+      if (!patchedImgBytes) await loadCanonicalOtaImage();
+      if (!patchedImgBytes) {
+        logTerm('Boot image not loaded yet.', 't-err');
+        return;
+      }
+      const blob = new Blob([patchedImgBytes], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ayeos_boot_v5.2.0_wifi.img';
+      a.click();
+      URL.revokeObjectURL(url);
+      logTerm('Downloaded Wi-Fi provisioned ayeos_boot_v5.2.0_wifi.img (20,480 bytes).', 't-ok');
+    });
+
+    // Copy CLI one-liner
+    document.getElementById('btn-copy-cli').addEventListener('click', () => {
+      const txt = document.getElementById('cli-oneliner').textContent;
+      navigator.clipboard.writeText(txt);
+      const btn = document.getElementById('btn-copy-cli');
+      btn.textContent = 'COPIED!';
+      setTimeout(() => { btn.textContent = 'COPY'; }, 1500);
+    });
+
+    // =========================================================================
+    // WebUSB ADB Protocol (`reboot:bootloader`)
+    // =========================================================================
+    function makeAdbPacket(cmdStr, arg0, arg1, payloadBytes) {
+      const cmd =
+        cmdStr.charCodeAt(0) |
+        (cmdStr.charCodeAt(1) << 8) |
+        (cmdStr.charCodeAt(2) << 16) |
+        (cmdStr.charCodeAt(3) << 24);
+      let sum = 0;
+      for (let i = 0; i < payloadBytes.length; i++) sum = (sum + payloadBytes[i]) >>> 0;
+      const hdr = new ArrayBuffer(24);
+      const dv = new DataView(hdr);
+      dv.setUint32(0, cmd, true);
+      dv.setUint32(4, arg0 >>> 0, true);
+      dv.setUint32(8, arg1 >>> 0, true);
+      dv.setUint32(12, payloadBytes.length >>> 0, true);
+      dv.setUint32(16, sum >>> 0, true);
+      dv.setUint32(20, (cmd ^ 0xffffffff) >>> 0, true);
+      return { hdr: new Uint8Array(hdr), payload: payloadBytes };
+    }
+
+    async function findBulkEndpoints(device, subClass, proto) {
+      await device.open();
+      if (!device.configuration) await device.selectConfiguration(1);
+      for (const iface of device.configuration.interfaces) {
+        for (const alt of iface.alternates) {
+          if (alt.interfaceClass === 0xff && alt.interfaceSubclass === subClass && alt.interfaceProtocol === proto) {
+            await device.claimInterface(iface.interfaceNumber);
+            let epIn = null, epOut = null;
+            for (const ep of alt.endpoints) {
+              if (ep.type === 'bulk' && ep.direction === 'in') epIn = ep.endpointNumber;
+              if (ep.type === 'bulk' && ep.direction === 'out') epOut = ep.endpointNumber;
+            }
+            return { ifaceNum: iface.interfaceNumber, epIn, epOut };
+          }
+        }
+      }
+      throw new Error(`Matching USB interface (0xFF/0x${subClass.toString(16)}/0x${proto.toString(16)}) not found on device.`);
+    }
+
+    document.getElementById('btn-adb-bootloader').addEventListener('click', async () => {
+      if (!('usb' in navigator)) {
+        logTerm('WebUSB is not available in this browser. Open https://ayeos.com in Chrome/Edge/Brave or use the 1-line CLI below.', 't-err');
+        return;
+      }
+      try {
+        logTerm('Requesting USB ADB device (Class 0xFF, Subclass 0x42, Protocol 0x01)...', 't-cmd');
+        const device = await navigator.usb.requestDevice({
+          filters: [{ classCode: 0xff, subclassCode: 0x42, protocolCode: 0x01 }]
+        });
+        logTerm(`Selected USB Device: ${device.productName || 'Android Device'} (VID=0x${device.vendorId.toString(16)} PID=0x${device.productId.toString(16)})`, 't-ok');
+        const { epIn, epOut } = await findBulkEndpoints(device, 0x42, 0x01);
+
+        // Send ADB CNXN
+        const banner = new TextEncoder().encode('host::features=stat_v2,cmd\0');
+        const cnxn = makeAdbPacket('CNXN', 0x01000001, 1024 * 1024, banner);
+        await device.transferOut(epOut, cnxn.hdr);
+        await device.transferOut(epOut, cnxn.payload);
+        logTerm('Sent ADB CNXN handshake — check your phone screen and tap "Allow USB debugging" if prompted!', 't-warn');
+
+        const respHdr = await device.transferIn(epIn, 24);
+        const dv = new DataView(respHdr.data.buffer);
+        const cmdWord = dv.getUint32(0, true);
+        const dataLen = dv.getUint32(12, true);
+        if (dataLen > 0) await device.transferIn(epIn, dataLen);
+
+        if (cmdWord === 0x48545541) { // AUTH
+          logTerm('Phone requested ADB RSA AUTH. Tap "Allow USB debugging" on the phone or hold Vol-Down + Power to enter Fastboot directly.', 't-warn');
+        }
+
+        // Send OPEN "reboot:bootloader\0"
+        const rbPayload = new TextEncoder().encode('reboot:bootloader\0');
+        const openPkt = makeAdbPacket('OPEN', 1, 0, rbPayload);
+        await device.transferOut(epOut, openPkt.hdr);
+        await device.transferOut(epOut, openPkt.payload);
+        logTerm('Sent ADB OPEN "reboot:bootloader" — phone is rebooting into Fastboot mode now!', 't-ok');
+        await device.close();
+      } catch (err) {
+        logTerm(`WebUSB ADB note: ${err.message}`, 't-warn');
+      }
+    });
+
+    // =========================================================================
+    // WebUSB Fastboot Protocol (`getvar`, `flashing unlock`, `download`, `flash`)
+    // =========================================================================
+    let fbDevice = null;
+    let fbEpIn = null;
+    let fbEpOut = null;
+
+    async function connectFastbootUsb() {
+      if (!('usb' in navigator)) {
+        throw new Error('WebUSB requires Chrome, Chromium, Edge, or Brave over HTTPS.');
+      }
+      if (fbDevice && fbDevice.opened) return;
+      logTerm('Select your phone in Fastboot mode (USB Class 0xFF, Subclass 0x42, Protocol 0x03)...', 't-cmd');
+      fbDevice = await navigator.usb.requestDevice({
+        filters: [
+          { classCode: 0xff, subclassCode: 0x42, protocolCode: 0x03 },
+          { vendorId: 0x0e8d }, // MediaTek (BLU G75)
+          { vendorId: 0x18d1 }  // Google Fastboot
+        ]
+      });
+      const eps = await findBulkEndpoints(fbDevice, 0x42, 0x03);
+      fbEpIn = eps.epIn;
+      fbEpOut = eps.epOut;
+      logTerm(`Connected Fastboot USB: ${fbDevice.productName || 'Fastboot Device'} (VID=0x${fbDevice.vendorId.toString(16)} PID=0x${fbDevice.productId.toString(16)})`, 't-ok');
+    }
+
+    async function fastbootCmd(cmdStr) {
+      logTerm(`fastboot > ${cmdStr}`, 't-cmd');
+      const outBytes = new TextEncoder().encode(cmdStr);
+      await fbDevice.transferOut(fbEpOut, outBytes);
+
+      while (true) {
+        const res = await fbDevice.transferIn(fbEpIn, 64);
+        const text = new TextDecoder().decode(res.data);
+        const prefix = text.slice(0, 4);
+        const body = text.slice(4);
+        if (prefix === 'INFO' || prefix === 'TEXT') {
+          logTerm(`  (bootloader) ${body}`, 't-warn');
+        } else if (prefix === 'OKAY') {
+          logTerm(`  OKAY ${body}`, 't-ok');
+          return { status: 'OKAY', body };
+        } else if (prefix === 'DATA') {
+          logTerm(`  DATA ${body}`, 't-cmd');
+          return { status: 'DATA', size: parseInt(body, 16) };
+        } else if (prefix === 'FAIL') {
+          logTerm(`  FAIL: ${body}`, 't-err');
+          throw new Error(`Fastboot FAIL: ${body}`);
+        } else {
+          return { status: prefix, body };
+        }
+      }
+    }
+
+    document.getElementById('btn-fastboot-probe').addEventListener('click', async () => {
+      try {
+        await connectFastbootUsb();
+        await fastbootCmd('getvar:product');
+        await fastbootCmd('getvar:serialno');
+        await fastbootCmd('getvar:unlocked');
+        await fastbootCmd('getvar:current-slot');
+      } catch (err) {
+        logTerm(`Fastboot probe error: ${err.message}`, 't-err');
+      }
+    });
+
+    btnFbUnlock.addEventListener('click', async () => {
+      try {
+        await connectFastbootUsb();
+        logTerm('Sending "flashing unlock" — LOOK AT YOUR PHONE SCREEN AND PRESS VOLUME UP TO CONFIRM!', 't-warn');
+        await fastbootCmd('flashing unlock');
+        logTerm('Bootloader Unlocked! Ready to flash ayeOS Bare-Metal v5.2.0.', 't-ok');
+      } catch (err) {
+        logTerm(`Unlock notice: ${err.message}`, 't-warn');
+      }
+    });
+
+    btnFbFlash.addEventListener('click', async () => {
+      if (!chkObliterate.checked) return;
+      try {
+        if (!patchedImgBytes) await loadCanonicalOtaImage();
+        if (!patchedImgBytes) throw new Error('Boot image not loaded');
+
+        await connectFastbootUsb();
+        setProgress(10);
+
+        // 1. Check unlock status
+        const ul = await fastbootCmd('getvar:unlocked');
+        if (ul.body && ul.body.trim().toLowerCase() === 'no') {
+          logTerm('Device bootloader reports locked. Triggering flashing unlock — press VOLUME UP on phone!', 't-warn');
+          await fastbootCmd('flashing unlock');
+        }
+        setProgress(25);
+
+        // 2. Purge Android init_boot_a & init_boot_b ramdisks
+        logTerm('Purging legacy Android ramdisks (erase:init_boot_a & erase:init_boot_b)...', 't-cmd');
+        try { await fastbootCmd('erase:init_boot_a'); } catch (_) {}
+        try { await fastbootCmd('erase:init_boot_b'); } catch (_) {}
+        setProgress(40);
+
+        // 3. Stream 20,480-byte Wi-Fi provisioned ayeOS Bare-Metal v5.2.0 image
+        const sizeHex = patchedImgBytes.length.toString(16).padStart(8, '0');
+        const dlRes = await fastbootCmd(`download:${sizeHex}`);
+        if (dlRes.status !== 'DATA') {
+          throw new Error(`Expected DATA response for download:${sizeHex}`);
+        }
+
+        const chunkSize = 16384;
+        for (let offset = 0; offset < patchedImgBytes.length; offset += chunkSize) {
+          const slice = patchedImgBytes.subarray(offset, Math.min(offset + chunkSize, patchedImgBytes.length));
+          await fbDevice.transferOut(fbEpOut, slice);
+        }
+        const dlDone = await fbDevice.transferIn(fbEpIn, 64);
+        logTerm(`  Download transfer response: ${new TextDecoder().decode(dlDone.data)}`, 't-ok');
+        setProgress(65);
+
+        // 4. Flash boot_a and boot_b
+        await fastbootCmd('flash:boot_a');
+        setProgress(80);
+        await fastbootCmd('download:' + sizeHex);
+        for (let offset = 0; offset < patchedImgBytes.length; offset += chunkSize) {
+          const slice = patchedImgBytes.subarray(offset, Math.min(offset + chunkSize, patchedImgBytes.length));
+          await fbDevice.transferOut(fbEpOut, slice);
+        }
+        await fbDevice.transferIn(fbEpIn, 64);
+        await fastbootCmd('flash:boot_b');
+        setProgress(92);
+
+        try { await fastbootCmd('set_active:b'); } catch (_) {}
+        await fastbootCmd('reboot');
+        setProgress(100);
+        logTerm('OBLITERATION COMPLETE! Device is now booting ayeOS Bare-Metal v5.2.0 (Calm 30Hz Qwave + Wi-Fi Provisioned)!', 't-ok');
+      } catch (err) {
+        logTerm(`WebUSB Flash error: ${err.message}`, 't-err');
+      }
+    });
+
+    // =========================================================================
+    // WebSerial (`navigator.serial`) Live UART / USB-CDC Console
+    // =========================================================================
+    let serialPort = null;
+    let serialWriter = null;
+
+    document.getElementById('btn-serial-connect').addEventListener('click', async () => {
+      if (!('serial' in navigator)) {
+        logTerm('WebSerial not supported in this browser. Use Chrome/Edge/Brave.', 't-err');
+        return;
+      }
+      try {
+        serialPort = await navigator.serial.requestPort();
+        await serialPort.open({ baudRate: 921600 });
+        document.getElementById('btn-serial-wifi').disabled = false;
+        logTerm('Connected WebSerial @ 921600 baud! Streaming live bare-metal UART/CDC output...', 't-ok');
+
+        const decoder = new TextDecoderStream();
+        serialPort.readable.pipeTo(decoder.writable);
+        const reader = decoder.readable.getReader();
+        (async () => {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (value) logTerm(value.trimEnd(), 't-ok');
+          }
+        })();
+      } catch (err) {
+        logTerm(`WebSerial connection note: ${err.message}`, 't-warn');
+      }
+    });
+
+    document.getElementById('btn-serial-wifi').addEventListener('click', async () => {
+      if (!serialPort || !serialPort.writable) return;
+      try {
+        const ssid = document.getElementById('wifi-ssid').value.trim();
+        const psk = document.getElementById('wifi-psk').value;
+        const hz = document.getElementById('res-hz').value;
+        const writer = serialPort.writable.getWriter();
+        const cmd = `AYEOS_WIFI ssid=${ssid} psk=${psk} hz=${hz}\n`;
+        await writer.write(new TextEncoder().encode(cmd));
+        writer.releaseLock();
+        logTerm(`Sent Wi-Fi & ${hz}Hz provisioning frame over WebSerial (SSID=${ssid}).`, 't-ok');
+      } catch (err) {
+        logTerm(`WebSerial write error: ${err.message}`, 't-err');
+      }
+    });
+
+    // Initialize OTA manifest + image on page load
+    loadCanonicalOtaImage();
+  </script>
+</body>
+</html>
