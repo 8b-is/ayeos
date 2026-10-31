@@ -1,0 +1,19 @@
+{
+  "device_slug": "blu-g75-g1170",
+  "os_name": "ayeOS Bare-Metal Rust Kernel (Zero Android / Zero Linux)",
+  "version": "5.1.0",
+  "resonance_hz": 432,
+  "image_size_bytes": 20480,
+  "gzip_kernel_bytes": 15433,
+  "image_sha256_hex": "5ed9689c990541c80bb2d5657658cf327b95327121cadd8781e7c970e6da1d15",
+  "image_blake2s_hex": "a9ed139024f21ca8f7f3b3cfa668323948394b48e5a23e063e57b88a31dbf232",
+  "attested_by_aye": "aye-sovereign-founder",
+  "domain_tag": "G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1",
+  "signature_hex": "d3ba146c401b397455f000b58356bcb08999bb490fedfbb63a0d4826204868db",
+  "primary_ota_urls": [
+    "https://g8t.is/g8t/ota/blu-g75/boot.img",
+    "https://8b.is/g8t/ota/blu-g75/boot.img",
+    "https://raw.githubusercontent.com/8b-is/g8t/main/firmware/blu_g75_g1170/boot_b/ayeos_boot_b_gz.img",
+    "http://192.168.151.14:8788/g8t/ota/blu-g75/boot.img"
+  ]
+}

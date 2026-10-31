@@ -1,4 +1,0 @@
-service vendor.mtkpower_applist-default /vendor/bin/hw/vendor.mediatek.hardware.mtkpower_applist-service.mediatek
-    class hal
-    user system
-    group system

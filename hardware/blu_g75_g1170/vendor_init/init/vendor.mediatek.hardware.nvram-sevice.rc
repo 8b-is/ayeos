@@ -1,4 +1,0 @@
-service nvram-aidl /vendor/bin/hw/vendor.mediatek.hardware.nvram-service
-    class hal
-    user root
-    group system bluetooth media audio radio

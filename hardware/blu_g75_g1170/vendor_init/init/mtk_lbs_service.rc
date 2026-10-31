@@ -1,4 +1,0 @@
-service mtk_lbs_service /vendor/bin/mtk_lbs_service
-    class hal
-    user system
-    group system gps radio inet

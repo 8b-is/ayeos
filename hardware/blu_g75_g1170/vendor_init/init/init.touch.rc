@@ -1,5 +1,0 @@
-# TOUCH KO
-
-on init
-    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d \
-        /vendor/lib/modules galaxycore-spi-gc7272.ko

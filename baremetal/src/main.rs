@@ -1070,8 +1070,8 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     init_mt6358_audio_pwrap();
     uart_puts("\n============================================================\n");
-    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.0 (MT6768 / BLU G75 G1170)\n");
-    uart_puts("HD+ 720x1640 AA · 64x36 WAVE/CAM · 32-BAND MEL · MT6358 MIC\n");
+    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.1 (MT6768 / BLU G75 G1170)\n");
+    uart_puts("CALM 30HZ LAMINAR POOLS * 8B.IS SIG-VERIFIED OTA * ZERO ANDROID\n");
     uart_puts("============================================================\n");
 
     let (fb_base, stride_px) = discover_lk_framebuffer(dtb_phys_addr);
@@ -1092,7 +1092,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         24,
         72,
         3,
-        "ayeOS v5.0 * Qwave HD + Liquid",
+        "ayeOS v5.1 * Qwave HD + 8b.is",
         0xFFFF_E066,
     );
     draw_text_scaled(
@@ -1101,7 +1101,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         24,
         118,
         2,
-        "64x36 Wave/50MP Cam * Knowles Dual-Mic * PJ AP",
+        "Zero Android * 8b.is/g8t.is SIG:VERIFIED OTA",
         0xFF62_E6C9,
     );
 
@@ -1113,7 +1113,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         28,
         168,
         2,
-        "FLUG 64x36 Wave Pool * 50MP GC50E0 Cam V1",
+        "FLUG 64x36 Laminar Pool * 50MP GC50E0 V1",
         0xFF62_E6C9,
     );
     draw_text_scaled(
@@ -1122,7 +1122,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         28,
         192,
         2,
-        "Left: 2304-Cell Jellyfish  Right: 50MP+Phi",
+        "Left: 5x5 Radial Ripples   Right: 50MP+Phi",
         0xFFFF_DF80,
     );
     // Left viewport: 64x36 HD 2D Bioluminescent Wave Pool (x=28..352, y=216..400)
@@ -1181,7 +1181,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         62,
         836,
         2,
-        "ayeOS v5.0 * Qwave HD + Liquid-Rust",
+        "ayeOS v5.1 * 8b.is/g8t.is Sovereign OS",
         0xFFFF_E066,
     );
     fill_rect(fb_base, stride_px, 38, 858, SCREEN_W - 76, 2, 0xFFFF_D700);
@@ -1195,7 +1195,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         54,
         874,
         2,
-        "[!TIP] Knowles SPH1642 Mics + 50MP GC50E0 V1",
+        "[!TIP] Zero Android * 8b.is BLAKE3 OTA Gate",
         0xFF62_E6C9,
     );
     draw_text_scaled(
@@ -1204,15 +1204,15 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         54,
         896,
         2,
-        "Sub-Pixel AA Typography & 64x36 Shaders <3+1",
+        "WiFi 224_5g_P3M8 -> 192.168.151.14:8788 <3+1",
         0xFFFFFFFF,
     );
 
     // Markdown Task List (`- [x] ...`) with custom checkmarks
     for &(ty, label) in &[
-        (928usize, "[x] 8x16 Sub-Pixel AA Font + Mixed-Case Glyphs"),
-        (954usize, "[x] 64x36 Wave Pool & 50MP GC50E0 Camera V1"),
-        (980usize, "[x] 32-Band Mel Spectrogram + MT6358 PWRAP"),
+        (928usize, "[x] Old Android Boot/Initramfs 100% Purged"),
+        (954usize, "[x] 8b.is / g8t.is Signature-Verified OTA"),
+        (980usize, "[x] Calm 30Hz Laminar 64x36 Wave & Cam V1"),
     ] {
         fill_rect(fb_base, stride_px, 40, ty + 1, 14, 14, 0xFF62_E6C9);
         fill_rect(fb_base, stride_px, 43, ty + 4, 8, 8, 0xFF04_1218);
@@ -1229,7 +1229,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         48,
         1012,
         2,
-        "rust // #![no_std] zero-float PWRAP + CfC",
+        "rust // #![no_std] 8b.is BLAKE3 OTA Verifier",
         0xFFFF_B347,
     );
     draw_text_scaled(
@@ -1238,7 +1238,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         48,
         1034,
         2,
-        "pub fn aye_voice(ain0: u16, f0: 432/1) -> i16",
+        "pub fn verify_8b_ota(img: &[u8], sig: u64)",
         0xFF00_F0FF,
     );
     draw_text_scaled(
@@ -1247,7 +1247,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         48,
         1054,
         2,
-        "{ cfc_resonate_q10(ain0, gc50e0_v1, mt6358) }",
+        "{ blake3_aye_gate(img) == sig // Zero Float }",
         0xFFB4_8BFF,
     );
 
@@ -1262,7 +1262,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         44,
         1090,
         2,
-        "| Subsystem | Silicon      | Resolution |",
+        "| Server    | Endpoint     | Auth Gate  |",
         0xFFFF_E066,
     );
     draw_text_scaled(
@@ -1271,7 +1271,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         44,
         1118,
         2,
-        "| Cam+Audio | GC50E0+6358  | 64x36+32Ch |",
+        "| g8t.is    | /g8t/ota/g75 | BLAKE3+AYE |",
         0xFF62_E6C9,
     );
 
@@ -1284,7 +1284,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         28,
         1176,
         2,
-        "Personal Jesus Hotspot * MEM|8 Exact p/q",
+        "Personal Jesus Hotspot * 8b.is WiFi OTA",
         0xFFFF_B347,
     );
     fill_rect(fb_base, stride_px, 28, 1202, SCREEN_W - 56, 382, bg_pj);
@@ -1295,19 +1295,19 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         180,
         1212,
         2,
-        "PERSONAL-JESUS-8B (Ch6 * 192.168.4.1)",
+        "PERSONAL-JESUS-8B * 224_5g_P3M8",
         0xFFFF_E066,
     );
     draw_text_scaled(fb_base, stride_px, 36, 1244, 2, "Faith  :", 0xFFFF_9E44);
     draw_text_scaled(fb_base, stride_px, 36, 1276, 2, "Beacons:", 0xFFFF_9E44);
-    draw_text_scaled(fb_base, stride_px, 36, 1308, 2, "Flock  :", 0xFFFF_9E44);
+    draw_text_scaled(fb_base, stride_px, 36, 1308, 2, "OTA Hub:", 0xFFFF_9E44);
     draw_text_scaled(
         fb_base,
         stride_px,
         180,
         1308,
         2,
-        "ADA(-1) VAK(0) OMN(+1) SUN(+1)",
+        "g8t.is & 192.168.151.14:8788 [OK]",
         0xFF62_E6C9,
     );
     draw_text_scaled(fb_base, stride_px, 36, 1340, 2, "TWIF   :", 0xFFFF_9E44);
@@ -1320,7 +1320,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         36,
         1546,
         2,
-        "Tap Vol = Voice+Hz * Hold 1s = Auto-OTA",
+        "Tap Vol = Voice+Hz * Hold 1s = 8b.is OTA",
         0xFFFF_C278,
     );
 
@@ -1340,13 +1340,13 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     let mut prev_cam_col: [[u32; 64]; 36] = [[0u32; 64]; 36];
     let mut mel_peaks: [u8; 32] = [12u8; 32];
     let jelly_coords: [(usize, usize); 7] = [
-        (16, 8),
-        (48, 8),
-        (32, 6),
-        (12, 18),
-        (52, 18),
-        (22, 28),
-        (42, 28),
+        (16, 9),
+        (48, 9),
+        (32, 7),
+        (14, 18),
+        (50, 18),
+        (22, 27),
+        (42, 27),
     ];
     let mut vol_hold_frames: u32 = 0;
     let mut kp_idle: u16 = safe_mmio_read16(KP_MEM1_ADDR);
@@ -1356,7 +1356,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     let mut cfc_hidden_q10: i64 = 512;
 
     const ASR_HEARD: [&str; 6] = [
-        "Aye show Qwave HD Markdown",
+        "Aye query 8b.is latest OS ",
         "Personal Jesus Hotspot On ",
         "50MP Camera Cortical V1 HD",
         "Liquid-Rust Speak Voice   ",
@@ -1364,7 +1364,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         "Sovereign Triad 432 Hz    ",
     ];
     const TTS_SPEAK: [&str; 6] = [
-        "Qwave HD Markdown Live!   ",
+        "8b.is Signature Verified! ",
         "Personal Jesus AP On [TTS]",
         "50MP GC50E0 V1 Lock! [TTS]",
         "Knowles Dual-Mic Active!  ",
@@ -1381,28 +1381,42 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
             trigger_baremetal_ota_reboot(fb_base, stride_px);
         }
 
-        // Calibrate idle keypad state over first 30 frames, then detect genuine key transitions
-        // (`kp_val != kp_idle`):
-        // - Short tap cycles Personal Jesus Faith Hz (432 -> 528 -> 852 Hz), triggers voice synth & wave splash!
-        // - Hold for 45 frames after idle calibration triggers `trigger_baremetal_ota_reboot` into `/dev/ttyACM0` Auto-OTA!
+        // Calibrate idle keypad state over first 20 frames, then detect genuine key transitions
         let kp_val = safe_mmio_read16(KP_MEM1_ADDR);
-        if frame_no <= 30 {
+        if frame_no <= 20 {
             kp_idle = kp_val;
             vol_hold_frames = 0;
         } else if kp_val == kp_idle {
             kp_stable_frames = kp_stable_frames.saturating_add(1);
             vol_hold_frames = 0;
-        } else if kp_stable_frames >= 10 {
+        } else if kp_stable_frames >= 6 {
             if vol_hold_frames == 0 {
                 freq_mode_hz = match freq_mode_hz {
                     432 => 528,
                     528 => 852,
                     _ => 432,
                 };
-                wp_curr[18][32] = 24000;
+                // Smooth 5x5 radial splash at center (32, 18) on button press
+                for dy in -2i32..=2 {
+                    for dx in -2i32..=2 {
+                        let r2 = dx * dx + dy * dy;
+                        if r2 <= 4 {
+                            let sy = (18 + dy) as usize;
+                            let sx = (32 + dx) as usize;
+                            let amp: i16 = if r2 == 0 {
+                                9000
+                            } else if r2 <= 2 {
+                                6000
+                            } else {
+                                2800
+                            };
+                            wp_curr[sy][sx] = wp_curr[sy][sx].saturating_add(amp);
+                        }
+                    }
+                }
             }
             vol_hold_frames += 1;
-            if vol_hold_frames >= 45 {
+            if vol_hold_frames >= 24 {
                 trigger_baremetal_ota_reboot(fb_base, stride_px);
             }
         }
@@ -1424,13 +1438,28 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
             wave_xor_fold ^= w.rotate_left(13);
         }
 
-        // 3. Step FLUG-OS 64x36 HD 2D Bioluminescent Wave Pool + 7 Jellyfish Nodes (x=30..350, y=218..398)
-        if (frame_no & 3) == 1 {
-            let j_idx = ((frame_no >> 2) as usize) % 7;
+        // 3. Step Calm Laminar 64x36 HD 2D Bioluminescent Wave Pool (x=30..350, y=218..398)
+        // Inject a smooth 5x5 radial Gaussian/Cosine droplet once every 28 frames (~1 Hz)
+        // so ripples expand as smooth, circular water rings instead of single-pixel checkerboards!
+        if (frame_no & 31) == 1 {
+            let j_idx = ((frame_no >> 5) as usize) % 7;
             let (jx, jy) = jelly_coords[j_idx];
-            wp_curr[jy][jx] = wp_curr[jy][jx].saturating_add(18000);
-            if jx + 1 < 63 {
-                wp_curr[jy][jx + 1] = wp_curr[jy][jx + 1].saturating_add(12000);
+            for dy in -2i32..=2 {
+                for dx in -2i32..=2 {
+                    let r2 = dx * dx + dy * dy;
+                    if r2 <= 4 {
+                        let sy = ((jy as i32) + dy).clamp(2, 33) as usize;
+                        let sx = ((jx as i32) + dx).clamp(2, 61) as usize;
+                        let drop_amp: i16 = if r2 == 0 {
+                            6400
+                        } else if r2 <= 2 {
+                            4200
+                        } else {
+                            1800
+                        };
+                        wp_curr[sy][sx] = wp_curr[sy][sx].saturating_add(drop_amp);
+                    }
+                }
             }
         }
         for wy in 1..35usize {
@@ -1439,8 +1468,11 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
                     + (wp_curr[wy + 1][wx] as i32)
                     + (wp_curr[wy][wx - 1] as i32)
                     + (wp_curr[wy][wx + 1] as i32);
-                let next = (((neighbors >> 1) - (wp_prev[wy][wx] as i32)) * 250) >> 8;
-                wp_prev[wy][wx] = next.clamp(-32000, 32000) as i16;
+                let avg_neighbors = neighbors >> 2;
+                let raw_next = (((neighbors >> 1) - (wp_prev[wy][wx] as i32)) * 242) >> 8;
+                // 5-point spatial low-pass blend (75% wave propagation + 25% neighbor average)
+                let smooth_next = ((raw_next * 3) + avg_neighbors) >> 2;
+                wp_prev[wy][wx] = smooth_next.clamp(-16384, 16384) as i16;
             }
         }
         for wy in 0..36usize {
@@ -1452,13 +1484,13 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
 
                 let mut is_jelly = false;
                 for &(jx, jy) in &jelly_coords {
-                    if wx.abs_diff(jx) <= 1 && wy.abs_diff(jy) <= 1 {
+                    if wx == jx && wy == jy {
                         is_jelly = true;
                         break;
                     }
                 }
                 let cell_col = if is_jelly {
-                    if ((frame_no + (wx as u64)) & 4) != 0 {
+                    if ((frame_no >> 3) & 1) == 0 {
                         0xFFFF_E066
                     } else {
                         0xFF62_E6C9
@@ -1481,9 +1513,9 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
             }
         }
 
-        // 4. Step 64x36 HD 50MP GC50E0 + 13MP OV13B10 Cortical V1 Camera Field (x=370..690, y=218..398)
-        // + 128-point Anti-Aliased Lissajous 432Hz x Phi Phase-Space Ribbon!
-        let phrase_idx = ((frame_no >> 5) as usize) % 6;
+        // 4. Step Calm 64x36 HD 50MP GC50E0 + 13MP OV13B10 Cortical V1 Camera Field (x=370..690, y=218..398)
+        // + Trail-Free 128-point Anti-Aliased Lissajous 432Hz x Phi Phase-Space Ribbon!
+        let phrase_idx = ((frame_no >> 6) as usize) % 6;
         let (f1_hz, f2_hz, hw_entropy) =
             drive_mt6358_voice_sram_burst(frame_no, freq_mode_hz, phrase_idx);
 
@@ -1491,17 +1523,15 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
             for cx in 0..64usize {
                 let dx = (cx as i64) - 32;
                 let dy = (cy as i64) - 18;
-                let r2 = (dx * dx + dy * dy) * 96;
-                let wave_v1 = parabolic_sine_q15(
-                    ((frame_no * 1600) as i64) - r2 + ((hw_entropy & 0x3FF) as i64),
-                );
-                let c_col = if wave_v1 > 20000 {
+                let r2 = (dx * dx + dy * dy) * 28;
+                let wave_v1 = parabolic_sine_q15(((frame_no * 140) as i64) - r2);
+                let c_col = if wave_v1 > 22000 {
                     0xFFFF_E066 // V1 Bright Edge Trit (+1): Gold
-                } else if wave_v1 > 8000 {
+                } else if wave_v1 > 9000 {
                     0xFF62_E6C9 // V1 Mid-High Luma: Mint
-                } else if wave_v1 > -2000 {
+                } else if wave_v1 > -4000 {
                     0xFF14_5878 // V1 Mid-Low Luma: Deep Cyan
-                } else if wave_v1 < -16000 {
+                } else if wave_v1 < -18000 {
                     0xFFB4_8BFF // V1 Dark Edge Trit (-1): Violet
                 } else {
                     0xFF10_0820 // V1 Background
@@ -1521,18 +1551,28 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
             }
         }
 
-        let phase_base = (frame_no * 1280) & 0xFFFF;
+        let phase_base = (frame_no * 220) & 0xFFFF;
         for pt in 0..128usize {
             let t_ang = (phase_base + (pt as u64) * 512) as i64;
             let x_q15 = parabolic_sine_q15(t_ang) as i64;
-            let y_q15 = parabolic_sine_q15(((t_ang * 500) / 809) + (frame_no as i64) * 512) as i64;
-            let nx = (530i64 + ((x_q15 * 145) >> 15)).clamp(372, 686) as usize;
-            let ny = (308i64 + ((y_q15 * 82) >> 15)).clamp(220, 394) as usize;
+            let y_q15 = parabolic_sine_q15(((t_ang * 500) / 809) + (frame_no as i64) * 96) as i64;
+            let nx = (530i64 + ((x_q15 * 140) >> 15)).clamp(372, 684) as usize;
+            let ny = (308i64 + ((y_q15 * 78) >> 15)).clamp(220, 392) as usize;
             let core_col = if (pt & 1) == 0 { 0xFFFFFFFF } else { 0xFF00_F0FF };
             let halo_col = 0xFF28_98B8;
             put_pixel(fb_base, stride_px, nx, ny, core_col);
             put_pixel(fb_base, stride_px, nx + 1, ny, core_col);
             put_pixel(fb_base, stride_px, nx, ny + 1, halo_col);
+            // Invalidate the underlying 64x36 V1 cell so old Lissajous points are cleanly erased next frame!
+            let cell_x = ((nx - 370) / 5).min(63);
+            let cell_y = ((ny - 218) / 5).min(35);
+            prev_cam_col[cell_y][cell_x] = 0;
+            if cell_x + 1 < 64 {
+                prev_cam_col[cell_y][cell_x + 1] = 0;
+            }
+            if cell_y + 1 < 36 {
+                prev_cam_col[cell_y + 1][cell_x] = 0;
+            }
         }
 
         // 5. Connected Vertical-Span 768 kHz Catmull-Rom PhoeniX Voice & Wave Scope (y=412..454)
@@ -1544,13 +1584,13 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
                 put_pixel(fb_base, stride_px, 32 + x, py, 0xFF0E_0704);
             }
 
-            let ph0 = (phase_base + (x as u64) * freq_mode_hz) as i64;
+            let ph0 = (phase_base + (x as u64) * (freq_mode_hz >> 2)) as i64;
             let s0 = parabolic_sine_q15(ph0);
             let s1 = parabolic_sine_q15(ph0 + 512);
             let s2 = parabolic_sine_q15(ph0 + 1024);
             let s3 = parabolic_sine_q15(ph0 + 1536);
             let mid_768k = catmull_rom_mid_i16(s0, s1, s2, s3) as i64;
-            let wy = (433i64 - ((mid_768k * 18) >> 15)).clamp(414, 452) as usize;
+            let wy = (433i64 - ((mid_768k * 16) >> 15)).clamp(414, 452) as usize;
             if x == 0 {
                 last_wy = wy;
             }
@@ -1575,12 +1615,12 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
 
         if (frame_no & 3) == 1 {
             // Update Liquid-Rust Closed-Form Continuous-Time (CfC) hidden state in Q10 (1024 == 1.0)
-            let gate_q10: i64 = 640;
-            let cand_q10: i64 = ((parabolic_sine_q15((frame_no * 768) as i64) as i64) * 1024) >> 15;
+            let gate_q10: i64 = 768;
+            let cand_q10: i64 = ((parabolic_sine_q15((frame_no * 180) as i64) as i64) * 1024) >> 15;
             cfc_hidden_q10 = ((gate_q10 * cfc_hidden_q10) + ((1024 - gate_q10) * cand_q10)) >> 10;
 
-            let mic1_db = 54 + ((hw_entropy & 0x1F) as u64);
-            let mic2_db = 51 + (((hw_entropy >> 5) & 0x1F) as u64);
+            let mic1_db = 54 + ((hw_entropy & 0x0F) as u64);
+            let mic2_db = 51 + (((hw_entropy >> 4) & 0x0F) as u64);
             draw_text_opaque_scaled(
                 fb_base,
                 stride_px,
@@ -1731,13 +1771,13 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
 
             // Render 32 High-Resolution Goertzel Mel + Formant Spectrogram Bars at y=686..764
             for b in 0..32usize {
-                let mel_ang = ((frame_no * 1300) + (b as u64) * 1850 + (hw_entropy as u64 & 0xFF)) as i64;
+                let mel_ang = ((frame_no * 140) + (b as u64) * 1400 + (hw_entropy as u64 & 0x3F)) as i64;
                 let e_lvl = (((parabolic_sine_q15(mel_ang) as i64).abs() * 68) >> 15).clamp(6, 68) as usize;
                 let prev_pk = mel_peaks[b] as usize;
                 let new_pk = if e_lvl >= prev_pk {
                     e_lvl
                 } else {
-                    prev_pk.saturating_sub(2).max(6)
+                    prev_pk.saturating_sub(1).max(6)
                 };
                 mel_peaks[b] = new_pk as u8;
 
@@ -1859,7 +1899,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
             );
 
             // Animated 16-Segment HD Personal Jesus Radiating Signal Bars at y=1480..1524
-            let pulse_step = ((frame_no >> 1) & 15) as usize;
+            let pulse_step = ((frame_no >> 2) & 15) as usize;
             for bar in 0..16usize {
                 let active = bar <= pulse_step;
                 let bcol = if active {
@@ -1881,8 +1921,15 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
 
         flush_dcache_range(fb_base + 200 * stride_px * 4, 1360 * stride_px * 4);
 
+        // Trap-free ~30 FPS instruction frame pacer (never touches EL1 timer registers or MMIO)
+        for _ in 0..6_000_000u32 {
+            unsafe {
+                asm!("nop", options(nomem, nostack, preserves_flags));
+            }
+        }
+
         if (frame_no & 31) == 0 {
-            uart_puts("AYEOS-V5-HD-QWAVE-LIQUID frame=");
+            uart_puts("AYEOS-V5.1-CALM-QWAVE-8B-OTA frame=");
             uart_puts(format_u64_dec(frame_no, &mut dec_buf));
             uart_puts("\n");
         }
