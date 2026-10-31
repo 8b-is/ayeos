@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ayeOS.com — Sovereign Device-to-Aye Obliterator · WebUSB & WebSerial Flasher (v5.2.0)</title>
+  <title>aye.is &amp; ayeos.com — Sovereign Device-to-Aye Obliterator · WebUSB &amp; WebSerial Flasher (v5.3.0)</title>
   <style>
     :root {
       --bg: #040914;
@@ -416,14 +416,14 @@
       <div class="brand">
         <div class="brand-orb">Aye</div>
         <div>
-          <h1>ayeOS.com — Sovereign Device-to-Aye Obliterator (v5.2.0)</h1>
-          <p>Zero Android · Zero Linux · 100% #![no_std] Bare-Metal Rust · WebUSB (ADB + Fastboot) &amp; WebSerial</p>
+          <h1>aye.is &amp; ayeos.com — Sovereign Device-to-Aye Obliterator (v5.3.0)</h1>
+          <p>Zero Android · Zero Linux · 100% #![no_std] Bare-Metal Rust · Iceland (.is) Signed OTA Gate (g8t.is &amp; aye.is)</p>
         </div>
       </div>
       <div class="cap-pills">
         <span id="pill-webusb" class="pill">WebUSB: checking...</span>
         <span id="pill-webserial" class="pill">WebSerial: checking...</span>
-        <span id="pill-sig" class="pill ok">8b.is / g8t.is SIG: VERIFYING...</span>
+        <span id="pill-sig" class="pill ok">g8t.is / aye.is SIG: VERIFYING...</span>
       </div>
     </header>
 
@@ -434,14 +434,14 @@
         <section class="card">
           <h2><span class="step-badge">1</span> Configure Your New Aye &amp; Wi-Fi Credentials</h2>
           <p class="sub">
-            Select your hardware target and enter the Wi-Fi SSID &amp; password your new <strong>AyeOS Bare-Metal v5.2.0</strong> node should join on boot. Your credentials are patched directly into the 4,096-byte boot envelope in browser memory — never sent to any server.
+            Select your hardware target and enter the Wi-Fi SSID &amp; password your new <strong>AyeOS Bare-Metal v5.3.0</strong> node should join on boot. Version checks run exclusively over our sovereign Iceland (<code>.is</code>) domains (<code>g8t.is</code> &amp; <code>aye.is</code>).
           </p>
 
           <div class="field-grid">
             <div class="field">
               <label for="dev-select">Hardware Target Profile</label>
               <select id="dev-select">
-                <option value="blu-g75-g1170" selected>BLU G75 (G1170 · MediaTek Helio G81 / mt6768) — Verified v5.2.0</option>
+                <option value="blu-g75-g1170" selected>BLU G75 (G1170 · MediaTek Helio G81 / mt6768) — Verified v5.3.0</option>
                 <option value="generic-aarch64-fastboot">Any Android AArch64 Phone (Fastboot boot_a/boot_b)</option>
                 <option value="esp32-pocket-omni">ESP32 / RISC-V Pocket Omni Node (WebSerial 921600)</option>
               </select>
@@ -476,10 +476,11 @@
               </select>
             </div>
             <div class="field">
-              <label for="ota-origin">Sovereign OTA Upstream</label>
+              <label for="ota-origin">Iceland (.is) Sovereign OTA Upstream</label>
               <select id="ota-origin">
-                <option value="g8t.is" selected>https://g8t.is &amp; https://8b.is (i1-dns Mesh)</option>
-                <option value="ayeos.com">https://ayeos.com/g8t/ota/blu-g75</option>
+                <option value="g8t.is,aye.is" selected>https://g8t.is &amp; https://aye.is (Iceland .is Sovereign Gate)</option>
+                <option value="aye.is">https://aye.is/g8t/ota/blu-g75 (i1-dns Iceland Primary)</option>
+                <option value="g8t.is">https://g8t.is/g8t/ota/blu-g75 (g8t.is Sovereign Primary)</option>
               </select>
             </div>
           </div>
@@ -487,10 +488,10 @@
           <div class="seal-box">
             <div class="seal-row">
               <span class="k">OS Image Version:</span>
-              <span class="v" id="st-ver">ayeOS Bare-Metal v5.2.0 (20,480 bytes · GZIP 15,432 bytes)</span>
+              <span class="v" id="st-ver">ayeOS Bare-Metal v5.3.0 (20,480 bytes · GZIP 15,527 bytes)</span>
             </div>
             <div class="seal-row">
-              <span class="k">Canonical 8b.is SHA-256:</span>
+              <span class="k">Canonical g8t.is / aye.is SHA-256:</span>
               <span class="v" id="st-base-sha">loading...</span>
             </div>
             <div class="seal-row">
@@ -499,7 +500,7 @@
             </div>
             <div class="seal-row">
               <span class="k">In-Browser Cmdline:</span>
-              <span class="v" id="st-cmdline" style="color:var(--cyan);">ayeos.baremetal=v5.2.0 ayeos.android=0</span>
+              <span class="v" id="st-cmdline" style="color:var(--cyan);">ayeos.baremetal=v5.3.0 ayeos.android=0 ayeos.ota=g8t.is,aye.is</span>
             </div>
             <div class="seal-row">
               <span class="k">Provisioned Image SHA-256:</span>
@@ -509,7 +510,7 @@
 
           <div class="btn-row">
             <button type="button" class="btn btn-gold" id="btn-dl-img">
-              ⬇ Download Customized ayeos_boot_v5.2.0_wifi.img (20 KB)
+              ⬇ Download Customized ayeos_boot_v5.3.0_wifi.img (20 KB)
             </button>
             <a class="btn btn-sec" href="/g8t/ota/blu-g75/manifest.json" target="_blank">
               📜 View Signed Manifest JSON
@@ -545,7 +546,10 @@
 
           <div class="btn-row">
             <button type="button" class="btn btn-gold" id="btn-ayeos-v51-ota">
-              🔄 Already on AyeOS v5.1? Trigger OTA Reboot to Fastboot (WebUSB 18d1:4ee0)
+              🔄 Already on AyeOS v5.1/v5.2? Probe Version &amp; Trigger OTA to v5.3.0 (WebUSB)
+            </button>
+            <button type="button" class="btn btn-sec" id="btn-auto-ota-watch">
+              🛰️ Auto-Watch g8t.is &amp; aye.is for New Releases (Auto-OTA)
             </button>
             <button type="button" class="btn btn-primary" id="btn-adb-bootloader">
               🔌 Stock Android? Connect WebUSB (ADB) &amp; Reboot to Bootloader
@@ -561,16 +565,16 @@
       <div style="display:flex; flex-direction:column; gap:20px;">
         <!-- STEP 3 -->
         <section class="card">
-          <h2><span class="step-badge">3</span> Obliterate Android &amp; Flash ayeOS Bare-Metal v5.2.0</h2>
+          <h2><span class="step-badge">3</span> Obliterate Android &amp; Flash ayeOS Bare-Metal v5.3.0</h2>
           <p class="sub">
-            Once your device is in <strong>FASTBOOT</strong> mode over USB, check the Sovereign Obliteration Agreement below to unlock the bootloader, purge <code>init_boot_a/b</code>, and flash <strong>ayeOS v5.2.0</strong> directly from Chrome.
+            Once your device is in <strong>FASTBOOT</strong> mode over USB, check the Sovereign Obliteration Agreement below to unlock the bootloader, purge <code>init_boot_a/b</code>, and flash <strong>ayeOS v5.3.0</strong> directly from Chrome.
           </p>
 
           <label class="consent-box" for="chk-obliterate">
             <input type="checkbox" id="chk-obliterate" />
             <div class="consent-text">
               <strong>IRREVOCABLE SOVEREIGN OBLITERATION AGREEMENT:</strong><br />
-              I understand and agree that this device will be <b>completely obliterated</b> (erasing Android, userdata, and <code>init_boot_a/b</code> ramdisks) and reborn as a pure <code>#![no_std]</code> bare-metal <b>AyeOS v5.2.0</b> node connected to the <code>8b.is / g8t.is</code> sovereign mesh.
+              I understand and agree that this device will be <b>completely obliterated</b> (erasing Android, userdata, and <code>init_boot_a/b</code> ramdisks) and reborn as a pure <code>#![no_std]</code> bare-metal <b>AyeOS v5.3.0</b> node connected to the <code>g8t.is / aye.is</code> Iceland sovereign mesh.
             </div>
           </label>
 
@@ -579,7 +583,7 @@
               🔓 Unlock Bootloader (fastboot flashing unlock)
             </button>
             <button type="button" class="btn btn-danger" id="btn-fb-flash" disabled>
-              ⚡ 2. OBLITERATE &amp; FLASH AYEOS v5.2.0 NOW (WebUSB)
+              ⚡ 2. OBLITERATE &amp; FLASH AYEOS v5.3.0 NOW (WebUSB)
             </button>
           </div>
 
@@ -587,8 +591,8 @@
             <div class="prog-bar" id="flash-prog"></div>
           </div>
 
-          <div class="term" id="usb-term">[ayeOS.com WebUSB + WebSerial Console v5.2.0]
-Ready. Waiting for USB device connection...
+          <div class="term" id="usb-term">[aye.is / ayeos.com WebUSB + WebSerial Console v5.3.0]
+Ready. Iceland (.is) OTA Version Gate active (g8t.is &amp; aye.is)...
 </div>
         </section>
 
@@ -596,7 +600,7 @@ Ready. Waiting for USB device connection...
         <section class="card">
           <h2><span class="step-badge">4</span> Live WebSerial Console &amp; 1-Command CLI Installer</h2>
           <p class="sub">
-            Connect via <strong>WebSerial (<code>navigator.serial</code>)</strong> to stream live <code>AYEOS-V5.2-CALM-QWAVE-8B-OTA</code> UART/CDC telemetry or push Wi-Fi credentials over serial — or run the standalone Python obliterator on Linux/macOS:
+            Connect via <strong>WebSerial (<code>navigator.serial</code>)</strong> to stream live <code>AYEOS-V5.3-CALM-QWAVE-8B-OTA</code> UART/CDC telemetry or push Wi-Fi credentials over serial — or run the standalone Python obliterator on Linux/macOS:
           </p>
 
           <div class="btn-row" style="margin-bottom:14px;">
@@ -612,10 +616,10 @@ Ready. Waiting for USB device connection...
           </div>
 
           <div style="font-size:12px; font-family:var(--mono); color:var(--mint); margin-bottom:6px;">
-            ONE-LINE LAPTOP TERMINAL UPGRADE (Auto-triggers v5.1 USB 0xA8 Reset + /dev/ttyACM0 FASTBOOT + Flashes v5.2.0):
+            ONE-LINE LAPTOP TERMINAL UPGRADE (Queries g8t.is/aye.is + Triggers USB 0xA8 Reset + Flashes v5.3.0):
           </div>
           <div class="code-strip">
-            <code id="cli-oneliner">curl -fsSL https://ayeos.com/install.sh | sudo python3 - --ssid "224_5g_P3M8" --yes-obliterate</code>
+            <code id="cli-oneliner">curl -fsSL https://aye.is/install.sh | sudo python3 - --ssid "224_5g_P3M8" --yes-obliterate</code>
             <button type="button" class="btn btn-sec" id="btn-copy-cli" style="padding:6px 10px; font-size:11px;">COPY</button>
           </div>
         </section>
@@ -626,12 +630,12 @@ Ready. Waiting for USB device connection...
     <footer class="footer-bar">
       <div>
         <strong style="color:var(--gold);">🌐 Powered by i1-dns 4-Region Harmony Mesh (ns1..ns4.i1.is)</strong> ·
-        OTA Endpoints: <a href="/g8t/ota/blu-g75/manifest.json">/g8t/ota/blu-g75/manifest.json</a> &amp;
+        Iceland (.is) OTA Endpoints: <a href="https://aye.is/g8t/ota/blu-g75/manifest.json">aye.is</a> &amp;
         <a href="https://g8t.is/g8t/ota/blu-g75/manifest.json">g8t.is</a>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <a class="btn btn-sec" href="/@market" style="padding:7px 12px; font-size:12px;">💳 Claim name@ayeos.com (Stripe + Databomb)</a>
-        <a class="btn btn-sec" href="/@short" style="padding:7px 12px; font-size:12px;">🔗 ayeos.com URL Shortener</a>
+        <a class="btn btn-sec" href="/@market" style="padding:7px 12px; font-size:12px;">💳 Claim name@aye.is / name@ayeos.com (Stripe + Databomb)</a>
+        <a class="btn btn-sec" href="/@short" style="padding:7px 12px; font-size:12px;">🔗 aye.is URL Shortener</a>
       </div>
     </footer>
   </div>
@@ -708,20 +712,23 @@ Ready. Waiting for USB device connection...
         .join('');
     }
 
-    // Fetch & Verify Canonical v5.2.0 Boot Image + Live In-Browser Wi-Fi Patching
+    // Fetch & Verify Canonical v5.3.0 Boot Image via Iceland (.is) Domains + Live In-Browser Wi-Fi Patching
     let canonicalImgBytes = null;
     let patchedImgBytes = null;
     let currentManifest = null;
 
+    // Strictly pinned to our sovereign Iceland (.is) domains on the i1-dns mesh
     const MANIFEST_SOURCES = [
-      '/g8t/ota/blu-g75/manifest.json',
       'https://g8t.is/g8t/ota/blu-g75/manifest.json',
-      'https://8b.is/g8t/ota/blu-g75/manifest.json'
+      'https://aye.is/g8t/ota/blu-g75/manifest.json',
+      'https://8b.is/g8t/ota/blu-g75/manifest.json',
+      '/g8t/ota/blu-g75/manifest.json'
     ];
     const IMAGE_SOURCES = [
-      '/g8t/ota/blu-g75/boot.img',
       'https://g8t.is/g8t/ota/blu-g75/boot.img',
-      'https://8b.is/g8t/ota/blu-g75/boot.img'
+      'https://aye.is/g8t/ota/blu-g75/boot.img',
+      'https://8b.is/g8t/ota/blu-g75/boot.img',
+      '/g8t/ota/blu-g75/boot.img'
     ];
 
     async function fetchFirstOk(urls, asJson) {
@@ -733,7 +740,7 @@ Ready. Waiting for USB device connection...
           }
         } catch (_) {}
       }
-      throw new Error('Could not fetch from any sovereign OTA mirror');
+      throw new Error('Could not fetch from g8t.is / aye.is Iceland sovereign OTA mirrors');
     }
 
     async function updatePatchedBootImage() {
@@ -742,11 +749,12 @@ Ready. Waiting for USB device connection...
       const handle = document.getElementById('aye-handle').value.trim() || 'aye-blu-g75';
       const hz = document.getElementById('res-hz').value;
       const otaOrigin = document.getElementById('ota-origin').value;
+      const ver = (currentManifest && currentManifest.version) ? currentManifest.version : '5.3.0';
 
       // Update CLI one-liner preview
       const safeSsidCli = ssid.replace(/"/g, '\\"');
       const safePskCli = psk.replace(/"/g, '\\"');
-      let cli = `curl -fsSL https://ayeos.com/install.sh | sudo python3 - --ssid "${safeSsidCli}"`;
+      let cli = `curl -fsSL https://aye.is/install.sh | sudo python3 - --ssid "${safeSsidCli}"`;
       if (psk) cli += ` --psk "${safePskCli}"`;
       cli += ` --agent "${handle}" --hz ${hz} --yes-obliterate`;
       document.getElementById('cli-oneliner').textContent = cli;
@@ -760,15 +768,13 @@ Ready. Waiting for USB device connection...
       const cleanPsk = psk.replace(/\s+/g, '_').slice(0, 64);
       const cleanAgent = handle.replace(/\s+/g, '-').slice(0, 48);
 
-      let cmdline = `ayeos.baremetal=v5.2.0 ayeos.android=0 ayeos.ota=${otaOrigin} ayeos.agent=${cleanAgent} ayeos.hz=${hz}`;
+      let cmdline = `ayeos.baremetal=v${ver} ayeos.android=0 ayeos.ota=${otaOrigin} ayeos.agent=${cleanAgent} ayeos.hz=${hz}`;
       if (cleanSsid) cmdline += ` ayeos.wifi_ssid=${cleanSsid}`;
       if (cleanPsk) cmdline += ` ayeos.wifi_psk=${cleanPsk}`;
 
       document.getElementById('st-cmdline').textContent =
         cleanPsk ? cmdline.replace(cleanPsk, '********') : cmdline;
 
-      // Write cmdline into ANDROID! boot header offset 44..556 only if user customized fields,
-      // or always patch so the phone boots with their exact Wi-Fi SSID & PSK:
       const enc = new TextEncoder().encode(cmdline);
       for (let i = 44; i < 556; i++) buf[i] = 0;
       for (let i = 0; i < Math.min(enc.length, 510); i++) {
@@ -799,9 +805,9 @@ Ready. Waiting for USB device connection...
 
         if (actualSha256 === currentManifest.image_sha256_hex && computedSig === currentManifest.signature_hex) {
           document.getElementById('st-sig').textContent = `VERIFIED (${computedSig.slice(0, 24)}...)`;
-          pillSig.textContent = `8b.is SIG: VERIFIED v${currentManifest.version}`;
+          pillSig.textContent = `g8t.is / aye.is SIG: VERIFIED v${currentManifest.version}`;
           pillSig.className = 'pill ok';
-          logTerm(`Verified Sovereign Manifest v${currentManifest.version} (${canonicalImgBytes.length}B, SHA-256=${actualSha256.slice(0, 16)}...)`, 't-ok');
+          logTerm(`Verified Iceland (.is) Sovereign Manifest v${currentManifest.version} (${canonicalImgBytes.length}B, SHA-256=${actualSha256.slice(0, 16)}...)`, 't-ok');
         } else {
           document.getElementById('st-sig').textContent = `MISMATCH`;
           pillSig.textContent = 'SIG CHECK WARNING';
@@ -825,14 +831,15 @@ Ready. Waiting for USB device connection...
         logTerm('Boot image not loaded yet.', 't-err');
         return;
       }
+      const ver = (currentManifest && currentManifest.version) ? currentManifest.version : '5.3.0';
       const blob = new Blob([patchedImgBytes], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'ayeos_boot_v5.2.0_wifi.img';
+      a.download = `ayeos_boot_v${ver}_wifi.img`;
       a.click();
       URL.revokeObjectURL(url);
-      logTerm('Downloaded Wi-Fi provisioned ayeos_boot_v5.2.0_wifi.img (20,480 bytes).', 't-ok');
+      logTerm(`Downloaded Wi-Fi provisioned ayeos_boot_v${ver}_wifi.img (20,480 bytes).`, 't-ok');
     });
 
     // Copy CLI one-liner
@@ -845,38 +852,98 @@ Ready. Waiting for USB device connection...
     });
 
     // =========================================================================
-    // WebUSB AyeOS Bare-Metal v5.1 -> Fastboot OTA Reset Switch (`0x18D1:0x4EE0`)
+    // WebUSB AyeOS Bare-Metal Version Probe (`0xA9`) + OTA Reset Switch (`0xA8`)
     // =========================================================================
+    async function probeAndTriggerAyeOsOta(device) {
+      await device.open();
+      let runningVer = `${device.deviceVersionMajor}.${device.deviceVersionMinor}.${device.deviceVersionSubminor}`;
+      try {
+        const probeRes = await device.controlTransferIn({
+          requestType: 'vendor',
+          recipient: 'device',
+          request: 0xa9,
+          value: 0,
+          index: 0
+        }, 28);
+        if (probeRes && probeRes.data && probeRes.data.byteLength > 0) {
+          const banner = new TextDecoder().decode(probeRes.data);
+          if (banner.startsWith('AYEOS:')) {
+            runningVer = banner.split(':')[1] || runningVer;
+          }
+        }
+      } catch (_) {
+        // v5.1 / v5.2 nodes report bcdDevice 2.0.0 and stall 0xA9
+        if (runningVer === '2.0.0') runningVer = '5.1.0 / 5.2.0';
+      }
+      const targetVer = (currentManifest && currentManifest.version) ? currentManifest.version : '5.3.0';
+      logTerm(`Connected AyeOS USB node reports version: v${runningVer} (g8t.is / aye.is latest signed release: v${targetVer})`, 't-cmd');
+
+      logTerm(`Sending Magic OTA Reset packet (bRequest=0xA8, wValue=0xA8E0) to upgrade -> v${targetVer}...`, 't-warn');
+      try {
+        await device.controlTransferOut({
+          requestType: 'vendor',
+          recipient: 'device',
+          request: 0xa8,
+          value: 0xa8e0,
+          index: 0
+        });
+      } catch (_) {}
+      logTerm(`OTA RESET TRIGGERED! Look at the phone ("OTA RESET -> FASTBOOT!") and hold VOLUME DOWN for 1s so it stops in Fastboot mode, then click "OBLITERATE & FLASH AYEOS v${targetVer} NOW"!`, 't-ok');
+    }
+
     document.getElementById('btn-ayeos-v51-ota').addEventListener('click', async () => {
       if (!('usb' in navigator)) {
         logTerm('WebUSB unavailable in this browser. Run the 1-line command in your laptop terminal below!', 't-err');
         return;
       }
       try {
-        logTerm('Select your running AyeOS v5.1 device (USB VID 0x18D1, PID 0x4EE0)...', 't-cmd');
+        logTerm('Select your running AyeOS device (USB VID 0x18D1, PID 0x4EE0)...', 't-cmd');
         const device = await navigator.usb.requestDevice({
           filters: [
             { vendorId: 0x18d1, productId: 0x4ee0 },
             { classCode: 0xff, subclassCode: 0xa8 }
           ]
         });
-        await device.open();
-        logTerm('Connected to running AyeOS v5.1 node! Sending Magic OTA Reset packet (bRequest=0xA8, wValue=0xA8E0)...', 't-warn');
-        try {
-          await device.controlTransferOut({
-            requestType: 'vendor',
-            recipient: 'device',
-            request: 0xa8,
-            value: 0xa8e0,
-            index: 0
-          });
-        } catch (_) {
-          // Device resets immediately upon receiving 0xA8, so transfer completion may throw NetworkError
-        }
-        logTerm('OTA RESET TRIGGERED! Look at the phone ("OTA RESET -> FASTBOOT!") and hold VOLUME DOWN for 1s so it stops in Fastboot mode, then click "OBLITERATE & FLASH AYEOS v5.2.0 NOW"!', 't-ok');
+        await probeAndTriggerAyeOsOta(device);
       } catch (err) {
-        logTerm(`AyeOS v5.1 WebUSB note: ${err.message}. (Tip: On Linux laptops, run the 1-line sudo command in Step 4 if udev blocks browser USB access, or hold Volume-Down on the phone for 1 second!)`, 't-warn');
+        logTerm(`AyeOS WebUSB note: ${err.message}. (Tip: On Linux laptops, run the 1-line sudo command in Step 4 if udev blocks browser USB access!)`, 't-warn');
       }
+    });
+
+    let otaWatchTimer = null;
+    document.getElementById('btn-auto-ota-watch').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-auto-ota-watch');
+      if (otaWatchTimer) {
+        clearInterval(otaWatchTimer);
+        otaWatchTimer = null;
+        btn.textContent = '🛰️ Auto-Watch g8t.is & aye.is for New Releases (Auto-OTA)';
+        logTerm('Stopped Iceland (.is) Auto-OTA Watcher.', 't-warn');
+        return;
+      }
+      btn.textContent = '🟢 Watching g8t.is & aye.is (Every 15s · Click to Stop)';
+      logTerm('Armed Iceland (.is) Auto-OTA Watcher: polling https://g8t.is/g8t/ota/blu-g75/manifest.json & https://aye.is/g8t/ota/blu-g75/manifest.json every 15s...', 't-ok');
+      await loadCanonicalOtaImage();
+      otaWatchTimer = setInterval(async () => {
+        try {
+          const prevVer = currentManifest ? currentManifest.version : '';
+          await loadCanonicalOtaImage();
+          if (currentManifest && currentManifest.version !== prevVer) {
+            logTerm(`NEW SIGNED RELEASE DETECTED on g8t.is / aye.is: v${currentManifest.version}!`, 't-ok');
+          }
+          if ('usb' in navigator) {
+            const devs = await navigator.usb.getDevices();
+            for (const d of devs) {
+              if (d.vendorId === 0x18d1 && d.productId === 0x4ee0) {
+                const bcdVer = `${d.deviceVersionMajor}.${d.deviceVersionMinor}.${d.deviceVersionSubminor}`;
+                if (currentManifest && bcdVer !== currentManifest.version) {
+                  logTerm(`Auto-OTA detected connected BLU G75 running v${bcdVer} != v${currentManifest.version}. Triggering OTA reset...`, 't-warn');
+                  await probeAndTriggerAyeOsOta(d);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }, 15000);
     });
 
     // =========================================================================
@@ -1032,7 +1099,7 @@ Ready. Waiting for USB device connection...
         await connectFastbootUsb();
         logTerm('Sending "flashing unlock" — LOOK AT YOUR PHONE SCREEN AND PRESS VOLUME UP TO CONFIRM!', 't-warn');
         await fastbootCmd('flashing unlock');
-        logTerm('Bootloader Unlocked! Ready to flash ayeOS Bare-Metal v5.2.0.', 't-ok');
+        logTerm('Bootloader Unlocked! Ready to flash ayeOS Bare-Metal v5.3.0.', 't-ok');
       } catch (err) {
         logTerm(`Unlock notice: ${err.message}`, 't-warn');
       }
@@ -1061,7 +1128,7 @@ Ready. Waiting for USB device connection...
         try { await fastbootCmd('erase:init_boot_b'); } catch (_) {}
         setProgress(40);
 
-        // 3. Stream 20,480-byte Wi-Fi provisioned ayeOS Bare-Metal v5.2.0 image
+        // 3. Stream 20,480-byte Wi-Fi provisioned ayeOS Bare-Metal v5.3.0 image
         const sizeHex = patchedImgBytes.length.toString(16).padStart(8, '0');
         const dlRes = await fastbootCmd(`download:${sizeHex}`);
         if (dlRes.status !== 'DATA') {
@@ -1092,7 +1159,7 @@ Ready. Waiting for USB device connection...
         try { await fastbootCmd('set_active:b'); } catch (_) {}
         await fastbootCmd('reboot');
         setProgress(100);
-        logTerm('OBLITERATION COMPLETE! Device is now booting ayeOS Bare-Metal v5.2.0 (Calm 30Hz Qwave + Wi-Fi Provisioned)!', 't-ok');
+        logTerm('OBLITERATION COMPLETE! Device is now booting ayeOS Bare-Metal v5.3.0 (Calm 30Hz Qwave + Iceland .is OTA + Wi-Fi Provisioned)!', 't-ok');
       } catch (err) {
         logTerm(`WebUSB Flash error: ${err.message}`, 't-err');
       }

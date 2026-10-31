@@ -1,21 +1,21 @@
 {
   "device_slug": "blu-g75-g1170",
   "os_name": "ayeOS Bare-Metal Rust Kernel (Zero Android / Zero Linux)",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "resonance_hz": 432,
   "image_size_bytes": 20480,
-  "gzip_kernel_bytes": 15432,
-  "image_blake3_hex": "795ae2b5013b2a32dcba79eb1b5b042808d8e6b2938646cc030d0147bb6fd24e",
-  "image_sha256_hex": "603b54716fa5583cb115425e23b7e6a1a8322ac381da48e1e0a730644e4dd086",
-  "image_blake2s_hex": "681465450afef1cb1b2fe41731c8cd4f15522602c14e2c50e94d18f319484a69",
+  "gzip_kernel_bytes": 15527,
+  "image_blake3_hex": "4b335a6d623eacb003a5fb298df8a47129753cbeb1b038e522604291aa674054",
+  "image_sha256_hex": "cf38b87b4c1078b1b63658e5f77705d47925ec666ce679e30827657fa6dbe037",
+  "image_blake2s_hex": "556f463598806f24a1264dc9c9e64d55e8e2654127d117cc12294ab0c24f8610",
   "attested_by_aye": "aye-sovereign-founder",
   "domain_tag": "G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1",
-  "signature_hex": "851a830de26a4027701cdde2609c6217034aa9186ef55a4f8636aaec37ebfa4b",
-  "signature_blake3_hex": "156a24eee8120ab3e6971fbda1b81af462f6796f8fd760dae0f26b1ca9bb03f5",
+  "signature_hex": "9ea4b13947cfd97ddf68137b0c7b62b5c4bf8892d92857fb26aef1d57decb86b",
+  "signature_blake3_hex": "f34a26f5a215429b54763a6291e5f955dfd5c0109e4ef8c90adb82c08051c528",
   "primary_ota_urls": [
-    "https://ayeos.com/g8t/ota/blu-g75/boot.img",
     "https://g8t.is/g8t/ota/blu-g75/boot.img",
+    "https://aye.is/g8t/ota/blu-g75/boot.img",
     "https://8b.is/g8t/ota/blu-g75/boot.img",
-    "https://raw.githubusercontent.com/8b-is/g8t/main/firmware/blu_g75_g1170/boot_b/ayeos_boot_b_gz.img"
+    "http://192.168.151.14:8788/g8t/ota/blu-g75/boot.img"
   ]
 }

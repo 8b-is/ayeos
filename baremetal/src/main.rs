@@ -251,7 +251,7 @@ const MUSB_INDEX: usize = MUSB_BASE + 0x0E;
 const MUSB_FIFO0: usize = MUSB_BASE + 0x20;
 const MUSB_CSR0: usize = MUSB_BASE + 0x102;
 
-/// 18-byte USB Device Descriptor (`VID = 0x18D1`, `PID = 0x4EE0`, "ayeOS Bare-Metal Sovereign Node")
+/// 18-byte USB Device Descriptor (`VID = 0x18D1`, `PID = 0x4EE0`, `bcdDevice = 0x0530` v5.3.0)
 const AYEOS_USB_DEV_DESC: [u8; 18] = [
     18,   // bLength
     0x01, // bDescriptorType = DEVICE
@@ -262,12 +262,15 @@ const AYEOS_USB_DEV_DESC: [u8; 18] = [
     64,   // bMaxPacketSize0 = 64 bytes
     0xD1, 0x18, // idVendor = 0x18D1 (Google/Fastboot compatible)
     0xE0, 0x4E, // idProduct = 0x4EE0
-    0x00, 0x02, // bcdDevice = 2.00 (REV #0002)
+    0x30, 0x05, // bcdDevice = 5.30 (ayeOS Bare-Metal v5.3.0)
     0x00, // iManufacturer
     0x00, // iProduct
     0x00, // iSerialNumber
     0x01, // bNumConfigurations = 1
 ];
+
+/// Live USB Endpoint 0 Version Probe payload (`bmRequestType = 0xC0`, `bRequest = 0xA9`)
+const AYEOS_USB_VER_PAYLOAD: &[u8] = b"AYEOS:5.3.0:G8T.IS+AYE.IS";
 
 /// 18-byte USB Configuration + Interface Descriptor (9B Config + 9B Interface, 0 endpoints beyond EP0)
 const AYEOS_USB_CFG_DESC: [u8; 18] = [
@@ -332,6 +335,16 @@ fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8) -> bool {
         if b_request == 0xA8 || w_value == 0xA8E0 || (bm_req_type == 0x40 && b_request == 0xFF) {
             safe_mmio_write16(MUSB_CSR0, 0x0048); // SERVICED_RXPKTRDY | DATAEND
             return true;
+        }
+        // Magic AyeOS Live Version Query (`bmRequestType == 0xC0`, `bRequest == 0xA9`)
+        if bm_req_type == 0xC0 && b_request == 0xA9 {
+            safe_mmio_write16(MUSB_CSR0, 0x0040); // SERVICED_RXPKTRDY
+            let len = (w_length as usize).min(AYEOS_USB_VER_PAYLOAD.len());
+            for &byte in &AYEOS_USB_VER_PAYLOAD[..len] {
+                safe_mmio_write8(MUSB_FIFO0, byte);
+            }
+            safe_mmio_write16(MUSB_CSR0, 0x000A); // TXPKTRDY | DATAEND
+            return false;
         }
 
         // Standard USB `SET_ADDRESS` (0x05)
@@ -1079,7 +1092,7 @@ fn frame_pacer_30hz() {
 #[inline(always)]
 fn compute_baremetal_image_seal() -> u64 {
     let mut hash: u64 = 0xCBF2_9CE4_8422_2325;
-    for b in b"AYEOS-BAREMETAL-V5.2.0-MT6768-G8T-IS-8B-IS-SOVEREIGN" {
+    for b in b"AYEOS-BAREMETAL-V5.3.0-MT6768-G8T-IS-AYE-IS-SOVEREIGN" {
         hash ^= *b as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
     }
@@ -1092,8 +1105,8 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     init_mt6358_audio_pwrap();
     let image_seal = compute_baremetal_image_seal();
     uart_puts("\n============================================================\n");
-    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.2 (MT6768 / BLU G75 G1170)\n");
-    uart_puts("CALM 30HZ LAMINAR POOLS * 8B.IS SIG-VERIFIED OTA * ZERO ANDROID\n");
+    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.3 (MT6768 / BLU G75 G1170)\n");
+    uart_puts("CALM 30HZ LAMINAR POOLS * G8T.IS/AYE.IS AUTO-OTA * ZERO ANDROID\n");
     uart_puts("============================================================\n");
 
     let (fb_base, stride_px) = discover_lk_framebuffer(dtb_phys_addr);
@@ -1114,7 +1127,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         24,
         72,
         3,
-        "ayeOS v5.2 * Qwave HD + 8b.is",
+        "ayeOS v5.3 * Qwave HD + aye.is",
         0xFFFF_E066,
     );
     draw_text_scaled(
@@ -1123,7 +1136,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         24,
         118,
         2,
-        "Zero Android * 8b.is/g8t.is SIG:VERIFIED OTA",
+        "Zero Android * g8t.is/aye.is SIG:VERIFIED OTA",
         0xFF62_E6C9,
     );
 
@@ -1203,7 +1216,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         62,
         836,
         2,
-        "ayeOS v5.2 * 8b.is/g8t.is Sovereign OS",
+        "ayeOS v5.3 * g8t.is/aye.is Sovereign OS",
         0xFFFF_E066,
     );
     fill_rect(fb_base, stride_px, 38, 858, SCREEN_W - 76, 2, 0xFFFF_D700);
@@ -1947,7 +1960,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         frame_pacer_30hz();
 
         if (frame_no & 31) == 0 {
-            uart_puts("AYEOS-V5.2-CALM-QWAVE-8B-OTA frame=");
+            uart_puts("AYEOS-V5.3-CALM-QWAVE-ICELAND-OTA frame=");
             uart_puts(format_u64_dec(frame_no, &mut dec_buf));
             uart_puts("\n");
         }
