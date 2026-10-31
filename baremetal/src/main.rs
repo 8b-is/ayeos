@@ -32,6 +32,8 @@ mod usb_control;
 mod usb_board;
 #[cfg(feature = "usb-report")]
 mod usb_phy;
+#[cfg(feature = "usb-report")]
+mod usb_status;
 
 // Written by the exception vector; Board4 uses it to stop after skipped faults.
 #[no_mangle]

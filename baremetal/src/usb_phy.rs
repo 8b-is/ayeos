@@ -106,8 +106,7 @@ pub fn initialize(io: &mut impl Io, matched: bool) -> Init {
     io.write16(MUSB + 6, 1);
     io.write16(MUSB + 8, 0); // latch EP0 only; CPU IRQs remain masked
     io.write8(MUSB + 0x0b, 4); // bus reset latch
-    let _ = io.read8(MUSB + 0x0a);
-    let _ = io.read16(MUSB + 2);
+    let _ = crate::usb_control::acknowledge_interrupts(io, MUSB);
     if io.faulted() {
         return Init::Fault;
     }

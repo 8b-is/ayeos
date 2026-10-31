@@ -90,7 +90,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
         base,
         stride,
         0,
-        "AYEOS studio-board4-r2 / USB EP0 READBACK (not CDC serial)",
+        "AYEOS studio-board4-r3 / USB EP0 READBACK (not CDC serial)",
     );
     board_line(
         base,
@@ -238,11 +238,18 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     );
                     board_line(base, stride, 8, line.text());
                 }
+                board_line(
+                    base,
+                    stride,
+                    10,
+                    "USB: W1C enabled; status row updates during quiet polls only",
+                );
                 flush_dcache_range(base, stride * SCREEN_H * 4);
                 if init == usb_phy::Init::Ready {
                     init = usb_phy::connect(&mut io);
                 }
-                let mut prior = (u8::MAX, u8::MAX, u32::MAX, false);
+                let mut prior = (u8::MAX, u8::MAX, u32::MAX, false, u32::MAX, u32::MAX);
+                let mut status_row = usb_status::StatusRow::new();
                 loop {
                     pet_mediatek_watchdog();
                     if init == usb_phy::Init::Attached {
@@ -253,17 +260,38 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                         device.control.configuration,
                         device.resets,
                         io.faulted(),
+                        device.requests,
+                        device.stalls,
                     );
-                    if state != prior {
+                    let idle =
+                        init != usb_phy::Init::Attached || io.faulted() || device.display_idle();
+                    if state != prior && idle && status_row.ready() {
                         prior = state;
                         let mut line = board_screen::Line::new();
                         let _ = write!(
                             line,
-                            "{:?} addr={} cfg={} resets={} fault={}",
-                            init, state.0, state.1, state.2, state.3
+                            "{:?} a={} c={} resets={} fault={} req={} stall={}",
+                            init, state.0, state.1, state.2, state.3, state.4, state.5
                         );
-                        board_line(base, stride, 10, line.text());
-                        flush_dcache_range(base, stride * SCREEN_H * 4);
+                        status_row.begin(line.text());
+                    }
+                    if let Some((column, byte)) = status_row.tick(idle) {
+                        let cell = [byte];
+                        let text = core::str::from_utf8(&cell).unwrap_or("?");
+                        // Same geometry as board_line: x=20, y=68+row*18,
+                        // scale=1: 8x16 glyph plus one spacing column.
+                        draw_text_opaque_scaled(
+                            base,
+                            stride,
+                            20 + column * 9,
+                            68 + 10 * 18,
+                            1,
+                            text,
+                            0xFF62E6C9,
+                            0xFF05060A,
+                            1,
+                        );
+                        usb_barrier(); // only order this cell's writes; no range sweep
                     }
                     // No pacer, timer wait, keypad action, full-screen repaint or logging.
                 }

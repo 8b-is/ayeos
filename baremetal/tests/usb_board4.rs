@@ -11,6 +11,8 @@ mod usb_board;
 mod usb_control;
 #[path = "../src/usb_phy.rs"]
 mod usb_phy;
+#[path = "../src/usb_status.rs"]
+mod usb_status;
 use std::collections::{BTreeMap, VecDeque};
 use usb_control::{Control, Device, Io, Reply};
 use usb_phy::{INFRA, MUSB, PHY, TOP};
@@ -134,6 +136,9 @@ struct Mock {
     fault_at: Option<usize>,
     ops: usize,
     stuck: Option<usize>,
+    dataend_strobe: bool,
+    latch_ep0_during_fifo: bool,
+    late_usb_bits: u32,
 }
 impl Mock {
     fn gate(&mut self) -> bool {
@@ -152,12 +157,13 @@ impl Mock {
             return 0;
         }
         if a == MUSB + 0x20 {
+            if self.latch_ep0_during_fifo {
+                self.latch_ep0_during_fifo = false;
+                *self.regs.entry(MUSB + 2).or_default() |= 1;
+            }
             return u32::from(self.fifo.pop_front().unwrap());
         }
         let v = *self.regs.get(&a).unwrap_or(&0);
-        if a == MUSB + 2 || a == MUSB + 0xa {
-            self.regs.insert(a, 0);
-        }
         v
     }
     fn write(&mut self, w: u8, a: usize, v: u32) {
@@ -166,6 +172,16 @@ impl Mock {
         }
         self.writes.push((w, a, v));
         if self.stuck == Some(a) {
+            return;
+        }
+        if a == MUSB + 2 || a == MUSB + 0xa {
+            assert_eq!(w, if a == MUSB + 2 { 16 } else { 8 });
+            let mut old = *self.regs.get(&a).unwrap_or(&0);
+            if a == MUSB + 0xa {
+                old |= self.late_usb_bits;
+                self.late_usb_bits = 0;
+            }
+            self.regs.insert(a, old & !v); // W1C; reads leave latched bits intact
             return;
         }
         if a == MUSB + 0x20 {
@@ -181,7 +197,8 @@ impl Mock {
             } else {
                 v & 0x3f
             };
-            self.regs.insert(a, next);
+            self.regs
+                .insert(a, if self.dataend_strobe { next & !8 } else { next });
             return;
         }
         self.regs.insert(a, v);
@@ -235,6 +252,241 @@ fn status_completion_defers_address_even_after_interrupt_consumed() {
     d.poll(&mut io, MUSB); // no new interrupt
     assert_eq!(d.control.address, 42);
     assert!(io.writes.contains(&(8, MUSB, 42)));
+}
+
+#[test]
+fn one_w1c_reset_is_counted_once_and_a_later_reset_is_counted_again() {
+    let mut d = Device::new(b"data");
+    let mut io = Mock::default();
+    io.regs.insert(MUSB + 0xa, 4);
+    io.regs.insert(MUSB + 2, 0x21);
+    d.poll(&mut io, MUSB);
+    for _ in 0..10_000 {
+        d.poll(&mut io, MUSB);
+    }
+    assert_eq!(d.resets, 1);
+    assert!(d.display_idle());
+    assert_eq!(
+        io.writes
+            .iter()
+            .filter(|w| **w == (8, MUSB + 0xa, 4))
+            .count(),
+        1
+    );
+    assert_eq!(
+        io.writes
+            .iter()
+            .filter(|w| **w == (16, MUSB + 2, 0x21))
+            .count(),
+        1
+    );
+    io.regs.insert(MUSB + 0xa, 4);
+    d.poll(&mut io, MUSB);
+    assert_eq!(d.resets, 2);
+    assert!(!d.display_idle());
+}
+
+#[test]
+fn startup_drains_old_latches_and_ack_preserves_unsampled_bits() {
+    let mut io = Mock::default();
+    io.regs.insert(MUSB + 0x6c, 0x1900);
+    io.regs.insert(MUSB + 0xa, 4);
+    io.regs.insert(MUSB + 2, 1);
+    assert_eq!(usb_phy::initialize(&mut io, true), usb_phy::Init::Ready);
+    assert_eq!(io.regs[&(MUSB + 0xa)], 0);
+    assert_eq!(io.regs[&(MUSB + 2)], 0);
+    let mut d = Device::new(b"data");
+    d.poll(&mut io, MUSB);
+    assert_eq!(d.resets, 0);
+    io.regs.insert(MUSB + 0xa, 4);
+    io.late_usb_bits = 0x20;
+    assert_eq!(usb_control::acknowledge_interrupts(&mut io, MUSB), (4, 0));
+    assert_eq!(io.regs[&(MUSB + 0xa)], 0x20);
+}
+
+#[test]
+fn strobe_readback_cannot_complete_address_or_configuration_without_fresh_ep0() {
+    let mut d = Device::new(b"data");
+    let mut io = Mock::default();
+    io.dataend_strobe = true;
+    io.request(setup(0, 5, 42, 0, 0));
+    d.poll(&mut io, MUSB);
+    assert_eq!(io.regs[&(MUSB + 0x12)], 0);
+    for _ in 0..1000 {
+        d.poll(&mut io, MUSB);
+    }
+    assert_eq!(d.control.address, 0);
+    assert!(!d.display_idle());
+    io.regs.insert(MUSB + 2, 2);
+    d.poll(&mut io, MUSB); // EP1 is not EP0 completion
+    assert_eq!(d.control.address, 0);
+    io.complete();
+    d.poll(&mut io, MUSB);
+    assert_eq!(d.control.address, 42);
+    for _ in 0..20 {
+        d.poll(&mut io, MUSB);
+    }
+    assert_eq!(io.writes.iter().filter(|w| **w == (8, MUSB, 42)).count(), 1);
+    io.request(setup(0, 9, 1, 0, 0));
+    d.poll(&mut io, MUSB);
+    for _ in 0..1000 {
+        d.poll(&mut io, MUSB);
+    }
+    assert_eq!(d.control.configuration, 0);
+    io.complete();
+    d.poll(&mut io, MUSB);
+    assert_eq!(d.control.configuration, 1);
+}
+
+#[test]
+fn coalesced_setup_latch_is_drained_before_arming_the_new_status() {
+    let mut d = Device::new(b"data");
+    let mut io = Mock::default();
+    io.dataend_strobe = true;
+    io.request(setup(0, 5, 42, 0, 0));
+    io.latch_ep0_during_fifo = true; // arrives after the initial IRQ snapshot
+    d.poll(&mut io, MUSB);
+    assert_eq!(io.regs[&(MUSB + 2)], 0);
+    for _ in 0..20 {
+        d.poll(&mut io, MUSB);
+    }
+    assert_eq!(d.control.address, 0);
+    io.complete();
+    d.poll(&mut io, MUSB);
+    assert_eq!(d.control.address, 42);
+}
+
+#[test]
+fn read_reply_waits_for_ep0_event_even_when_csr_reads_clear() {
+    let mut d = Device::new(b"data");
+    let mut io = Mock::default();
+    io.dataend_strobe = true;
+    io.request(setup(0x80, 6, 0x100, 0, 18));
+    d.poll(&mut io, MUSB);
+    io.regs.insert(MUSB + 0x12, 0); // no completion IRQ yet
+    for _ in 0..1000 {
+        d.poll(&mut io, MUSB);
+    }
+    assert!(!d.display_idle());
+    assert_eq!(d.requests, 1);
+    assert_eq!(io.sent, usb_control::DEVICE);
+    io.complete();
+    d.poll(&mut io, MUSB);
+    for _ in 0..256 {
+        d.poll(&mut io, MUSB);
+    }
+    assert!(d.display_idle());
+    assert_eq!(d.stalls, 0);
+}
+
+#[test]
+fn reset_and_abort_cancel_an_already_sampled_busy_completion() {
+    for reset in [false, true] {
+        let mut d = Device::new(b"data");
+        let mut io = Mock::default();
+        io.request(setup(0, 5, 42, 0, 0));
+        d.poll(&mut io, MUSB);
+        io.regs.insert(MUSB + 2, 1);
+        d.poll(&mut io, MUSB); // busy DATAEND retains event
+        if reset {
+            io.regs.insert(MUSB + 0xa, 4);
+            io.regs.insert(MUSB + 0x12, 0);
+        } else {
+            io.regs.insert(MUSB + 0x12, 0x10);
+        }
+        d.poll(&mut io, MUSB);
+        io.complete();
+        d.poll(&mut io, MUSB);
+        assert_eq!(d.control.address, 0);
+        assert!(!io.writes.contains(&(8, MUSB, 42)));
+    }
+}
+
+#[test]
+fn status_row_has_a_fixed_budget_pauses_during_usb_and_never_restarts_mid_row() {
+    let mut row = usb_status::StatusRow::new();
+    assert!(row.ready());
+    row.begin("hello");
+    assert_eq!(row.tick(true), Some((0, b'h')));
+    for _ in 0..100 {
+        assert_eq!(row.tick(false), None);
+    }
+    row.begin("replacement"); // not ready: snapshot must stay consistent
+    let mut bytes = vec![b'h'];
+    for column in 1..usb_status::COLUMNS {
+        let cell = row.tick(true).unwrap();
+        assert_eq!(cell.0, column);
+        bytes.push(cell.1);
+    }
+    assert_eq!(&bytes[..5], b"hello");
+    assert!(bytes[5..].iter().all(|b| *b == b' '));
+    assert!(!row.ready());
+    for _ in 0..65_536 {
+        assert_eq!(row.tick(true), None);
+    }
+    assert!(row.ready());
+    row.begin("next");
+    assert_eq!(row.tick(true), Some((0, b'n')));
+}
+
+#[test]
+fn w1c_mock_enumerates_then_transfers_all_chunks_in_both_dataend_models() {
+    let blob = fixture(0);
+    for strobe in [false, true] {
+        let mut d = Device::new(&blob);
+        let mut io = Mock::default();
+        io.dataend_strobe = strobe;
+        io.regs.insert(MUSB + 0xa, 4);
+        d.poll(&mut io, MUSB);
+        // First address-zero descriptor probe, as reported in the host logs.
+        io.request(setup(0x80, 6, 0x100, 0, 8));
+        d.poll(&mut io, MUSB);
+        assert_eq!(io.sent, usb_control::DEVICE[..8]);
+        io.complete();
+        d.poll(&mut io, MUSB);
+        io.request(setup(0, 5, 7, 0, 0));
+        d.poll(&mut io, MUSB);
+        for _ in 0..10 {
+            d.poll(&mut io, MUSB);
+        }
+        assert_eq!(d.control.address, 0);
+        io.complete();
+        d.poll(&mut io, MUSB);
+        assert_eq!(d.control.address, 7);
+        for (value, length, expected) in [
+            (0x100, 18, &usb_control::DEVICE[..]),
+            (0x200, 9, &usb_control::CONFIG[..9]),
+            (0x200, 18, &usb_control::CONFIG[..]),
+        ] {
+            io.sent.clear();
+            io.request(setup(0x80, 6, value, 0, length));
+            d.poll(&mut io, MUSB);
+            assert_eq!(io.sent, expected);
+            io.complete();
+            d.poll(&mut io, MUSB);
+        }
+        io.request(setup(0, 9, 1, 0, 0));
+        d.poll(&mut io, MUSB);
+        assert_eq!(d.control.configuration, 0);
+        io.complete();
+        d.poll(&mut io, MUSB);
+        assert_eq!(d.control.configuration, 1);
+        let mut output = Vec::new();
+        for (number, expected) in blob.chunks(48).enumerate() {
+            io.sent.clear();
+            io.request(setup(0xc0, 0xb1, number as u16, 0, 64));
+            d.poll(&mut io, MUSB);
+            assert_eq!(io.sent.len(), 64);
+            assert_eq!(&io.sent[16..16 + expected.len()], expected);
+            output.extend_from_slice(&io.sent[16..16 + expected.len()]);
+            io.complete();
+            d.poll(&mut io, MUSB);
+        }
+        assert_eq!(output, blob);
+        assert_eq!(d.resets, 1);
+        assert_eq!(d.stalls, 0);
+        assert_eq!(d.requests, 6 + (blob.len() as u32 + 47) / 48);
+    }
 }
 #[test]
 fn setupend_and_reset_cancel_pending_address() {

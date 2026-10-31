@@ -163,6 +163,21 @@ pub trait Io {
     fn settle(&mut self);
 }
 
+/// MediaTek USB20 interrupt status is W1C, not read-to-clear. Acknowledge
+/// exactly the sampled bits with the register's native width. Io supplies the
+/// hardware ordering barrier and suppresses subsequent accesses after a fault.
+pub fn acknowledge_interrupts(io: &mut impl Io, base: usize) -> (u8, u16) {
+    let usb = io.read8(base + 0x0a);
+    let tx = io.read16(base + 0x02);
+    if tx != 0 {
+        io.write16(base + 0x02, tx);
+    }
+    if usb != 0 {
+        io.write8(base + 0x0a, usb);
+    }
+    (usb, tx)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
     Setup,
@@ -173,6 +188,8 @@ enum Stage {
 pub struct Device<'a> {
     pub control: Control<'a>,
     stage: Stage,
+    ep0_pending: bool,
+    quiet_polls: u32,
     pub resets: u32,
     pub requests: u32,
     pub stalls: u32,
@@ -183,11 +200,17 @@ impl<'a> Device<'a> {
         Self {
             control: Control::new(blob),
             stage: Stage::Setup,
+            ep0_pending: false,
+            quiet_polls: 0,
             resets: 0,
             requests: 0,
             stalls: 0,
             stopped: false,
         }
+    }
+    /// A scheduling hint, not a bus-idle guarantee or a calibrated time interval.
+    pub fn display_idle(&self) -> bool {
+        self.stopped || (self.stage == Stage::Setup && self.quiet_polls >= 256)
     }
     /// Indexed endpoint registers: INDEX=0, CSR0 at +0x12, COUNT0 at +0x18.
     /// No delay, rendering, UART, DMA, IRQ unmask or updater inside this path.
@@ -196,12 +219,19 @@ impl<'a> Device<'a> {
             self.stopped = true;
             return;
         }
-        let usb = io.read8(base + 0x0a);
-        let _ = io.read16(base + 0x02); // clear latched EP0 interrupt
+        let quiet_before = self.quiet_polls;
+        self.quiet_polls = 0;
+        let (usb, tx) = acknowledge_interrupts(io, base);
+        if io.faulted() {
+            self.stopped = true;
+            return;
+        }
+        self.ep0_pending |= tx & 1 != 0;
         io.write8(base + 0x0e, 0);
         if usb & 4 != 0 {
             self.control.reset();
             self.stage = Stage::Setup;
+            self.ep0_pending = tx & 1 != 0; // cancel any previous completion
             self.resets = self.resets.saturating_add(1);
             io.write8(base, 0);
         }
@@ -223,11 +253,19 @@ impl<'a> Device<'a> {
             self.stage = Stage::Setup;
             csr = io.read16(base + 0x12);
         }
-        // DATAEND is cleared by hardware only after the status handshake. The
-        // interrupt may have been consumed during an earlier poll: use CSR0.
+        // Retain the sampled completion if CSR0 is still busy. Conversely, a
+        // zero/strobe-only DATAEND readback is NOT completion evidence by itself.
         if csr & (8 | 2) != 0 {
             return;
         }
+        if !self.ep0_pending {
+            if self.stage == Stage::Setup && usb == 0 && tx == 0 && csr == 0 {
+                self.quiet_polls = quiet_before.saturating_add(1);
+            }
+            return;
+        }
+        let data_in = self.stage == Stage::DataIn;
+        self.ep0_pending = false;
         if self.stage == Stage::StatusIn {
             if let Some(address) = self.control.status_complete() {
                 io.write8(base, address);
@@ -240,7 +278,7 @@ impl<'a> Device<'a> {
         }
         let count = io.read8(base + 0x18);
         // A zero-length OUT status packet may be visible before auto-ack.
-        if self.stage == Stage::DataIn && count == 0 {
+        if data_in && count == 0 {
             io.write16(base + 0x12, 0x40);
             self.stage = Stage::Setup;
             return;
@@ -255,6 +293,17 @@ impl<'a> Device<'a> {
         let mut setup = [0; 8];
         for b in &mut setup {
             *b = io.read8(base + 0x20);
+        }
+        if io.faulted() {
+            self.stopped = true;
+            return;
+        }
+        // A next SETUP can coalesce with the previous status interrupt after
+        // the initial interrupt snapshot. Consume its latch BEFORE arming the
+        // reply so it cannot be mistaken for that reply's completion next poll.
+        let setup_irq = io.read16(base + 0x02) & 1;
+        if setup_irq != 0 {
+            io.write16(base + 0x02, setup_irq);
         }
         if io.faulted() {
             self.stopped = true;
