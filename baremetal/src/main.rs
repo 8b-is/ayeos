@@ -34,6 +34,10 @@ mod usb_board;
 mod usb_phy;
 #[cfg(feature = "usb-report")]
 mod usb_status;
+#[cfg(feature = "audio-report")]
+mod audio_board;
+#[cfg(feature = "audio-report")]
+mod audio_probe;
 
 // Written by the exception vector; Board4 uses it to stop after skipped faults.
 #[no_mangle]

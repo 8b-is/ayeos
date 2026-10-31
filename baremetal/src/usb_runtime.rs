@@ -86,12 +86,11 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
     use core::fmt::Write;
     use usb_control::Io;
     clear_board_page(base, stride);
-    board_line(
-        base,
-        stride,
-        0,
-        "AYEOS studio-board4-r3 / USB EP0 READBACK (not CDC serial)",
-    );
+    #[cfg(not(feature = "audio-report"))]
+    let banner = "AYEOS studio-board4-r3 / USB EP0 READBACK (not CDC serial)";
+    #[cfg(feature = "audio-report")]
+    let banner = "AYEOS studio-board5 / SmartPA ID probe + USB EP0";
+    board_line(base, stride, 0, banner);
     board_line(
         base,
         stride,
@@ -184,11 +183,19 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     69,
                     "Capture this ONE page if no USB device appears. Keep raw FDT private.",
                 );
+                #[cfg(not(feature = "audio-report"))]
                 board_line(
                     base,
                     stride,
                     70,
                     "Expected ID 18d1:4ee0 bcd0544; use capture_board4.py, not an OTA daemon",
+                );
+                #[cfg(feature = "audio-report")]
+                board_line(
+                    base,
+                    stride,
+                    70,
+                    "ID 18d1:4ee0 bcd0545; capture_board5.py; no tone/profile enabled",
                 );
                 board_line(
                     base,
@@ -197,10 +204,52 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     "~ marks shortened fallback fields; the requested USB dump is complete.",
                 );
                 flush_dcache_range(base, stride * SCREEN_H * 4);
+                #[cfg(feature = "audio-report")]
+                let report_bytes = {
+                    board_line(
+                        base,
+                        stride,
+                        14,
+                        "Board5: bounded I2C4 probe before USB attach; inherited clocks/pins",
+                    );
+                    usb_barrier();
+                    let mut probe_io = UsbIo {
+                        start_faults: fault_count(),
+                    };
+                    let report = audio_probe::run(&mut probe_io, blob);
+                    let mut line = board_screen::Line::new();
+                    let _ = write!(
+                        line,
+                        "A5 status={} PA58={}/id{:02x} PA59={}/id{:02x} restored={}",
+                        report.words[4],
+                        report.words[32],
+                        report.words[33],
+                        report.words[37],
+                        report.words[38],
+                        report.words[42]
+                    );
+                    board_line(base, stride, 15, line.text());
+                    let mut line = board_screen::Line::new();
+                    let _ = write!(
+                        line,
+                        "A5 clocks top={:08x} infra={:08x} GPIO105/106={:08x}",
+                        report.words[8], report.words[9], report.words[10]
+                    );
+                    board_line(base, stride, 16, line.text());
+                    report.encode()
+                };
+                #[cfg(not(feature = "audio-report"))]
+                let usb_fault_baseline = initial_faults;
+                #[cfg(feature = "audio-report")]
+                let usb_fault_baseline = fault_count();
                 let mut io = UsbIo {
-                    start_faults: initial_faults,
+                    // Board5 probe faults are recorded in its frozen report. USB
+                    // has its own fault-stop boundary and separate register block.
+                    start_faults: usb_fault_baseline,
                 };
                 let mut device = usb_control::Device::new(blob); // CRC computed before attach
+                #[cfg(feature = "audio-report")]
+                device.control.set_report(&report_bytes);
                 let mut init = usb_phy::initialize(&mut io, board.ready());
                 let mut line = board_screen::Line::new();
                 let _ = write!(line, "INIT={:?} skipped faults={}", init, fault_count());

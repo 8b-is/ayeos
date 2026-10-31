@@ -27,6 +27,7 @@ class ControlTransfer(ctypes.Structure):
 
 
 class Usb:
+    ALLOWED = ((0x80, 6), (0x80, 8), (0xc0, 0xb0), (0xc0, 0xb1))
     def __init__(self, path, seconds):
         if not re.fullmatch(r"/dev/bus/usb/[0-9]{3}/[0-9]{3}", path):
             raise ValueError("select an explicit /dev/bus/usb/BBB/DDD node from lsusb")
@@ -45,7 +46,7 @@ class Usb:
         os.close(self.fd)
 
     def read(self, kind, request, value=0, index=0, length=64):
-        if (kind, request) not in ((0x80, 6), (0x80, 8), (0xc0, 0xb0), (0xc0, 0xb1)):
+        if (kind, request) not in self.ALLOWED:
             raise ValueError("request outside read-only capture protocol")
         for attempt in range(3):
             remaining = (self.deadline - time.monotonic_ns()) // 1_000_000
@@ -85,10 +86,10 @@ def chunk(packet, offset, size):
     return data
 
 
-def capture(usb):
+def capture(usb, expected_device=DEVICE):
     # Same VID/PID is used by legacy images: exact descriptors AND protocol ID
     # are mandatory. No configuration changes, reset, OUT payload or reboot.
-    if usb.read(0x80, 6, 0x0100, length=18) != DEVICE:
+    if usb.read(0x80, 6, 0x0100, length=18) != expected_device:
         raise ValueError("not the exact Board4 device descriptor")
     if usb.read(0x80, 6, 0x0200, length=18) != CONFIG:
         raise ValueError("not the exact Board4 EP0 configuration")
