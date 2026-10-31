@@ -5,11 +5,13 @@
   "resonance_hz": 432,
   "image_size_bytes": 20480,
   "gzip_kernel_bytes": 15433,
+  "image_blake3_hex": "e87e9d4585ea80e94c811edcff42ffc0c52fb97da272b92be167e5b853bfa6de",
   "image_sha256_hex": "5ed9689c990541c80bb2d5657658cf327b95327121cadd8781e7c970e6da1d15",
   "image_blake2s_hex": "a9ed139024f21ca8f7f3b3cfa668323948394b48e5a23e063e57b88a31dbf232",
   "attested_by_aye": "aye-sovereign-founder",
   "domain_tag": "G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1",
   "signature_hex": "d3ba146c401b397455f000b58356bcb08999bb490fedfbb63a0d4826204868db",
+  "signature_blake3_hex": "175af70f4cb3320f261c4bda3107adba10dad3eb65813629420620e5401798c6",
   "primary_ota_urls": [
     "https://g8t.is/g8t/ota/blu-g75/boot.img",
     "https://8b.is/g8t/ota/blu-g75/boot.img",

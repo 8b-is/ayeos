@@ -151,7 +151,7 @@ def udp_twif_beacon_loop():
             seq += 1
         except Exception:
             pass
-        time.sleep(2.0)
+        time.sleep(2)
 
 
 if __name__ == "__main__":
