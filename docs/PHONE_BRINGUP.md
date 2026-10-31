@@ -7,6 +7,24 @@ be established before the hotspot, speech and FM UI can truthfully become live.
 
 ## Current implementation
 
+**Board2 update:** four independent eight-property budgets now show audio/AFE,
+amplifier, connectivity and clock providers. Selection uses each node's own name
+or compatible value, never a matching PMIC ancestor. Reserved-memory and pinctrl
+subtrees are excluded. A prepass makes selection independent of property order.
+Each section counts omissions; no-match sections say `shown=0`.
+
+Clock lookup includes Board1's observed PWRAP provider phandle `0x12` plus the
+first provider of each selected node's `clocks` property. It deliberately does
+not guess later specifier boundaries without `#clock-cells`. At most 128 matched
+nodes and 16 distinct provider references are retained; overflow and unresolved
+reference counts appear in the footer. This is a focused first-provider report,
+not a complete clock graph. Matching declarations are not operational drivers.
+`@` and `~` now have actual bitmap glyphs. The maximum complete page is 83 rows
+including the kernel's header and hold lines, within the 85-row display limit.
+
+Current package output is `studio-board2.img`, banner `5.4.0-studio-board2`.
+Board1 artifacts and its historical handoff remain available separately.
+
 The optional `board-report` build now stops on a stationary **screen-first**
 diagnostic page. It shows x0, framebuffer address/stride, header and parser status,
 and up to 32 selected resource properties (two lines each). Paths and text are
@@ -45,7 +63,7 @@ rustc --edition=2021 --test baremetal/tests/board_report.rs -o /tmp/opencode/aye
 cargo build --release --locked --features board-report
 llvm-objcopy -O binary target/aarch64-unknown-none/release/ayeos-baremetal-mt6768 /tmp/studio-board1.bin
 # Back at repository root; use a new output directory each time
-python3 scripts/package_bringup.py --kernel /tmp/studio-board1.bin --output target/board1
+python3 scripts/package_bringup.py --kernel /tmp/studio-board1.bin --output target/board2
 ```
 
 The package is a **development diagnostic image**, not a completed hotspot,
