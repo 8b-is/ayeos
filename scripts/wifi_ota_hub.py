@@ -20,7 +20,9 @@ import threading
 import time
 import urllib.request
 
-BOOT_DIR = "/home/hue/8b-is/ayeos/hardware/blu_g75_g1170/boot_b"
+BOOT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../hardware/blu_g75_g1170/boot_b")
+)
 IMG_PATH = os.path.join(BOOT_DIR, "ayeos_boot_b_gz.img")
 MANIFEST_PATH = os.path.join(BOOT_DIR, "manifest.json")
 

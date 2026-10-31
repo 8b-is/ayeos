@@ -5,7 +5,8 @@
 set -euo pipefail
 
 SERIAL="1010305026000644"
-BOOT_DIR="/home/hue/8b-is/ayeos/hardware/blu_g75_g1170/boot_b"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BOOT_DIR="$REPO_ROOT/hardware/blu_g75_g1170/boot_b"
 MODE="${1:---help}"
 
 if [[ "$MODE" == "--live-takeover" ]]; then
