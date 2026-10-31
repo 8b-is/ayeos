@@ -8,9 +8,9 @@
 //! 2. Initializes `MT6768_UART0` (`0x1100_2000`) and streams live telemetry.
 //! 3. Discovers the physical `720 × 1640` (`BGRA8888` / `RGBA8888`) framebuffer initialized
 //!    by MediaTek `lk` via the Device Tree Blob (`FDT` in `x0`) and `DISP_OVL0_L0_ADDR` (`0x1400_70F4`).
-//! 4. Runs the zero-float **768 kHz 16× Catmull-Rom PhoeniX Synthesizer**, **79-Byte `MEM|8`
-//!    `WaveInt` Lattice**, and **Exact `p/q` Rational Engine** directly on the ARMv8-A silicon,
-//!    rendering a live 120 Hz Sovereign Graphical HUD with an embedded 8×8 pixel font!
+//! 4. Renders Constellation Studio with an embedded bitmap font and integer artwork.
+//!    Radio, camera, speech and network capabilities are not established by this UI.
+//!    This development build has not been verified on the phone.
 
 #![no_std]
 #![no_main]
@@ -18,6 +18,69 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
+
+mod dashboard;
+
+struct PhoneCanvas {
+    base: usize,
+    stride: usize,
+}
+
+impl dashboard::Canvas for PhoneCanvas {
+    fn pixel(&mut self, x: usize, y: usize, color: u32) {
+        put_pixel(self.base, self.stride, x, y, color);
+    }
+}
+
+/// Evidence-first studio UI. Hardware bring-up remains experimental; only the
+/// render-loop counter is telemetry. Artwork is explicitly labelled as a demo.
+#[no_mangle]
+pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
+    pet_mediatek_watchdog();
+    let (base, stride) = discover_lk_framebuffer(dtb_phys_addr);
+    clear_lk_boot_overlays(base, stride * SCREEN_H * 4);
+    let mut canvas = PhoneCanvas { base, stride };
+    let mut frame = 0u64;
+    let mut moving = false;
+    let mut pending_addr = 0u8;
+    let mut idle = safe_mmio_read16(KP_MEM1_ADDR);
+    let mut stable = 0u32;
+    let mut held = 0u32;
+    dashboard::paint(&mut canvas, glyph_8x16_hd, moving);
+    uart_puts("AYEOS 5.4 STUDIO PREVIEW: artwork is simulated; radio/camera/speech unverified\n");
+    loop {
+        pet_mediatek_watchdog();
+        frame = frame.wrapping_add(1);
+        if poll_usb_ota_switch(frame, &mut pending_addr) {
+            trigger_baremetal_ota_reboot(base, stride);
+        }
+        let key = safe_mmio_read16(KP_MEM1_ADDR);
+        if frame <= 20 {
+            idle = key;
+        } else if key == idle {
+            stable = stable.saturating_add(1);
+            held = 0;
+        } else if stable >= 6 {
+            if held == 0 {
+                moving = !moving;
+                dashboard::paint(&mut canvas, glyph_8x16_hd, moving);
+            }
+            held = held.saturating_add(1);
+            if held >= 24 {
+                trigger_baremetal_ota_reboot(base, stride);
+            }
+        }
+        if moving && frame & 7 == 0 {
+            dashboard::artwork(&mut canvas, (frame & 255) as u16);
+        }
+        if frame & 31 == 0 {
+            dashboard::counter(&mut canvas, glyph_8x16_hd, frame);
+        }
+        flush_dcache_range(base, stride * SCREEN_H * 4);
+        // Existing instruction-count delay; deliberately no measured FPS claim.
+        frame_pacer_30hz();
+    }
+}
 
 // ── 64-Byte ARM64 Linux/LK Boot Header + Reset Vector (`_head` / `_start`) ──
 core::arch::global_asm!(
@@ -1150,8 +1213,10 @@ fn compute_baremetal_image_seal() -> u64 {
     hash
 }
 
-#[no_mangle]
-pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
+// Retained as source-only audit evidence for the shipped 5.4 dashboard.
+// Its synthetic camera/ASR/RDS values must never be presented as telemetry.
+#[cfg(any())]
+fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     init_mt6358_audio_pwrap();
     let image_seal = compute_baremetal_image_seal();
