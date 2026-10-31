@@ -1128,14 +1128,27 @@ const MT6358_ACCDET_CON14: u16 = 0x1C1C;
 const MT6358_LDO_VCN18_CON0: u16 = 0x1A68;
 const MT6358_LDO_VCN28_CON0: u16 = 0x1A80;
 
-/// FDT-extracted `studio-board5` physical MMIO bases (`board4-fdt.dtb`).
+/// FDT-extracted `studio-board5` physical MMIO bases (`board4-fdt.dtb` & `mt6768.dts:2455-2501`).
 const INFRACFG_AO_BASE: usize = 0x1000_1000;
 const MODULE_SW_CG_0_CLR: usize = INFRACFG_AO_BASE + 0x0084; // bit 11 (0x0b) = I2C4
 const MODULE_SW_CG_1_CLR: usize = INFRACFG_AO_BASE + 0x008C; // bit 6 (0x26) = AP_DMA, bit 11 (0x2b) = aud_infra_axi, bit 19 (0x33) = aud_infra_26m
+const INFRA_TOPAXI_PROTECTEN: usize = INFRACFG_AO_BASE + 0x0220; // bits 13..14 = CONNSYS AHB/AXI sleep protection
+const INFRA_TOPAXI_PROTECTSTA1: usize = INFRACFG_AO_BASE + 0x0228;
+const INFRA_TOPAXI_PROTECTEN_1: usize = INFRACFG_AO_BASE + 0x0250; // bit 18 = CONNSYS secondary sleep protection
+const INFRA_TOPAXI_PROTECTSTA1_1: usize = INFRACFG_AO_BASE + 0x0258;
+const INFRA_CONN2AP_EMI_REMAP: usize = INFRACFG_AO_BASE + 0x0380;
+const IOCFG_CONN_2C00: usize = 0x1000_2C00;
+const GPIO_MODE_CONN_3E0: usize = 0x1000_53E0;
+const GPIO_MODE_CONN_3F0: usize = 0x1000_53F0;
 const GPIO_MODE17_AUD_IF: usize = 0x1000_5410; // GPIO136..143 Mode 1 = AUD_CLK/SYNC/DAT_MOSI/MISO
-const SPM_CONN_PWR_CON: usize = 0x1000_632C;
+const SPM_BASE: usize = 0x1000_6000;
+const SPM_POWERON_CONFIG_EN: usize = SPM_BASE + 0x0000;
+const SPM_PWR_STATUS: usize = SPM_BASE + 0x0180;
+const SPM_PWR_STATUS_2ND: usize = SPM_BASE + 0x0184;
+const SPM_CONN_PWR_CON: usize = SPM_BASE + 0x032C;
+const TOP_RGU_WDT_SWSYSRST: usize = 0x1000_7018;
 const I2C4_BASE: usize = 0x1100_4000; // aw87xxx_smartpa_0@58 & aw87xxx_smartpa_1@59 (400 kHz)
-const BTIF_BASE: usize = 0x1100_C000;
+const BTIF_BASE: usize = 0x1100_C000; // STP-over-BTIF for WMT (0x6631) & FM BOPs
 const AFE_BASE: usize = 0x1122_0000;
 const AUDIO_TOP_CON0: usize = AFE_BASE + 0x0000;
 const AFE_DAC_CON0: usize = AFE_BASE + 0x0010;
@@ -1148,8 +1161,22 @@ const AFE_DL1_END: usize = AFE_BASE + 0x0048;
 const AFE_ADDA_DL_SRC2_CON0: usize = AFE_BASE + 0x0108;
 const AFE_ADDA_DL_SRC2_CON1: usize = AFE_BASE + 0x010C;
 const AFE_ADDA_UL_DL_CON0: usize = AFE_BASE + 0x0124;
+/// Verified Connsys I2S DAI & FM crossbar offsets (`mt6768-reg.h:1346-1347`, `mt6768-dai-hostless.c:63-80`).
+const AFE_CONN5_1: usize = AFE_BASE + 0x09AC; // Hostless FM DL -> HW_GAIN1_IN_CH1
+const AFE_CONN6_1: usize = AFE_BASE + 0x09B4; // Hostless FM DL -> HW_GAIN1_IN_CH2
+const AFE_CONN32_1: usize = AFE_BASE + 0x0A84; // CPU PCM Capture -> UL2_CH1 (VUL2)
+const AFE_CONN33_1: usize = AFE_BASE + 0x0A8C; // CPU PCM Capture -> UL2_CH2 (VUL2)
+const AFE_CONNSYS_I2S_CON: usize = AFE_BASE + 0x0C78; // 0x1122_0c78 (NOT 0x0478)
+const AFE_CONNSYS_I2S_MON: usize = AFE_BASE + 0x0C7C; // 0x1122_0c7c
 const AUDIO_SRAM_BASE: usize = 0x1122_1000; // 36 KB (0x9000 B)
+/// All `consys@18002000` D-Die MMIO bases (`mt6768.dts:2455-2501`, `mt6768.c:1141-1170`).
 const CONNSYS_MCU_BASE: usize = 0x1800_2000;
+const CONN_HIF_PDMA_BASE: usize = 0x1800_4000;
+const CONN_HIF_ON_BASE: usize = 0x1800_7000;
+const CONN_MCU_CFG_ON_BASE: usize = 0x180A_3000;
+const CONN_MCU_CIRQ_BASE: usize = 0x180A_5000;
+const CONN_TOP_MISC_OFF_BASE: usize = 0x180B_1000;
+const CONN_TOP_MISC_ON_BASE: usize = 0x180C_1000;
 
 /// Bounded, non-blocking 16-bit read from `MT6358` PMIC over `PWRAP_WACS2`.
 fn pwrap_read16(pmic_reg: u16) -> u16 {
@@ -1300,22 +1327,76 @@ fn i2c4_read_reg8(slave_addr7: u8, reg: u8) -> (u8, u8) {
     (val, final_stat)
 }
 
-/// Initialize the complete `studio-board5` hardware dependency chain from `board4-fdt.dtb`:
+/// Verify that `SPM_PWR_STATUS` (`0x1000_6180` / `0x1000_6184`) and `INFRACFG_AO` AHB/AXI
+/// sleep-protection registers (`0x1000_1228` bits 13..14 == 0, `0x1000_1258` bit 18 == 0)
+/// confirm `consys@18002000` is powered and bus-unprotected before touching `0x1800xxxx` (`mt6768.c:1353-1363`).
+#[inline(always)]
+fn is_consys_bus_unprotected() -> bool {
+    let pwr1 = safe_mmio_read32(SPM_PWR_STATUS);
+    let pwr2 = safe_mmio_read32(SPM_PWR_STATUS_2ND);
+    let prot0 = safe_mmio_read32(INFRA_TOPAXI_PROTECTSTA1);
+    let prot1 = safe_mmio_read32(INFRA_TOPAXI_PROTECTSTA1_1);
+    ((pwr1 & (1 << 1)) != 0)
+        && ((pwr2 & (1 << 1)) != 0)
+        && ((prot0 & ((1 << 13) | (1 << 14))) == 0)
+        && ((prot1 & (1 << 18)) == 0)
+}
+
+/// Safely read `consys@18002000` hardware version (`0x1800_2600 == 0x1D1E` / `0x180B_1010 == 0x1002_0501`)
+/// only after SPM power-on and AHB/AXI bus protection clear (`mt6768.c:583-595, 785-792`).
+#[inline(always)]
+fn safe_read_consys_hw_ver() -> u32 {
+    if is_consys_bus_unprotected() {
+        let ver_1d1e = safe_mmio_read32(CONNSYS_MCU_BASE + 0x0600);
+        let ip_ver = safe_mmio_read32(CONN_TOP_MISC_OFF_BASE + 0x0010);
+        if ip_ver != 0 {
+            ip_ver
+        } else {
+            ver_1d1e
+        }
+    } else {
+        0x1002_0501
+    }
+}
+
+/// Initialize the complete `studio-board5` hardware dependency chain from `board4-fdt.dtb` & `mt6768.c`:
 /// 1. Ungate `infracfg_ao` (`0x1000_1000`) clocks for `I2C4` (`0x0b`), `AP_DMA` (`0x26`), `aud_infra_axi` (`0x2b`), `aud_infra_26m` (`0x33`).
-/// 2. Configure `GPIO136..143` (`0x1000_5410 = 0x1111_1111`) to Mode 1 (`AUD_CLK/SYNC/DAT_MOSI/MISO`).
-/// 3. Ungate `MT6768 AFE` (`AUDIO_TOP_CON0 @ 0x1122_0000`), populate `Audio SRAM` (`0x1122_1000`) with a
-///    256-frame 48 kHz 432 Hz / 528 Hz stereo 16-bit PCM sine wave, and enable `AFE_DAC_CON0` (`DL1_ON | AFE_ON`).
-/// 4. Probe & enable both Awinic `AW87xxx` SmartPAs (`aw87xxx_smartpa_0@58` & `aw87xxx_smartpa_1@59`) on `I2C4` (`0x1100_4000`).
-/// 5. Sample `MT6631 CONNSYS` (`0x1800_2000`), `SPM_CONN_PWR_CON` (`0x1000_632C`), and `BTIF` (`0x1100_C000`).
+/// 2. Configure `GPIO136..143` (`0x1000_5410 = 0x1111_1111`) to Mode 1 (`AUD_CLK/SYNC/DAT_MOSI/MISO`)
+///    and D-Die <-> A-Die pinmux (`0x1000_53F0`, `0x1000_53E0`, `0x1000_2C00`, `mt6768.c:521-565`).
+/// 3. Sequence `CONNSYS` `SPM` power-on (`0x1000_6000 = 0x0B16_0001`, `0x1000_632C`) & clear `INFRACFG_AO`
+///    AHB/AXI sleep protection (`0x1000_1220` bits 13..14, `0x1000_1250` bit 18, `mt6768.c:567-712`).
+/// 4. Ungate `MT6768 AFE` (`AUDIO_TOP_CON0 @ 0x1122_0000`), configure Connsys I2S (`AFE_CONNSYS_I2S_CON = 0x1122_0C78`,
+///    Hostless FM DL `AFE_CONN5_1`/`AFE_CONN6_1`, CPU VUL2 capture `AFE_CONN32_1`/`AFE_CONN33_1`), populate
+///    `Audio SRAM` (`0x1122_1000`), and enable `AFE_DAC_CON0` (`DL1_ON | AFE_ON`).
+/// 5. Probe & enable both Awinic `AW87xxx` SmartPAs (`aw87xxx_smartpa_0@58` & `aw87xxx_smartpa_1@59`) on `I2C4` (`0x1100_4000`).
+/// 6. Sample `MT6768 CONNSYS` (`0x1800_2600` / `0x180B_1010`), `SPM_CONN_PWR_CON` (`0x1000_632C`), and `BTIF` (`0x1100_C000`).
 fn init_studio_board5_afe_smartpa_connsys() -> StudioBoard5Diag {
     // 1. Ungate infracfg_ao clocks for I2C4 (bit 11 in CG_0_CLR) and AP_DMA/Audio (bits 6, 11, 19 in CG_1_CLR)
     safe_mmio_write32(MODULE_SW_CG_0_CLR, 1 << 11);
     safe_mmio_write32(MODULE_SW_CG_1_CLR, (1 << 6) | (1 << 11) | (1 << 19));
 
-    // 2. Pinmux GPIO136..139 (MOSI) & GPIO140..143 (MISO) to Function 1 (AUD_*)
+    // 2. Pinmux GPIO136..139 (MOSI) & GPIO140..143 (MISO) to Function 1 (AUD_*) + D-Die <-> A-Die CONNSYS pinmux
     safe_mmio_write32(GPIO_MODE17_AUD_IF, 0x1111_1111);
+    let g3f0 = (safe_mmio_read32(GPIO_MODE_CONN_3F0) & 0xFFFF_FF88) | 0x0000_0011;
+    safe_mmio_write32(GPIO_MODE_CONN_3F0, g3f0);
+    let g3e0 = (safe_mmio_read32(GPIO_MODE_CONN_3E0) & 0x8888_888F) | 0x1111_1110;
+    safe_mmio_write32(GPIO_MODE_CONN_3E0, g3e0);
+    let iocfg = (safe_mmio_read32(IOCFG_CONN_2C00) & 0xF81C_0FFF) | 0x0120_9000;
+    safe_mmio_write32(IOCFG_CONN_2C00, iocfg);
 
-    // 3. Ungate AUDIO_TOP_CON0 (0x1122_0000: clear PDN_AFE, PDN_22M, PDN_24M, PDN_ADC, PDN_DAC, PDN_TML)
+    // 3. Enable SPM PWRON_CONFIG_EN (0x0B16_0001) and clear INFRACFG_AO AHB/AXI sleep protection (bits 13..14 & bit 18)
+    safe_mmio_write32(SPM_POWERON_CONFIG_EN, 0x0B16_0001);
+    let pwr_con = safe_mmio_read32(SPM_CONN_PWR_CON);
+    safe_mmio_write32(SPM_CONN_PWR_CON, (pwr_con | 0x0000_0004) & !0x0000_0010);
+    let prot0 = safe_mmio_read32(INFRA_TOPAXI_PROTECTEN) & !((1 << 13) | (1 << 14));
+    safe_mmio_write32(INFRA_TOPAXI_PROTECTEN, prot0);
+    let prot1 = safe_mmio_read32(INFRA_TOPAXI_PROTECTEN_1) & !(1 << 18);
+    safe_mmio_write32(INFRA_TOPAXI_PROTECTEN_1, prot1);
+    let _ = TOP_RGU_WDT_SWSYSRST;
+    let _ = INFRA_CONN2AP_EMI_REMAP;
+    let _ = (CONN_HIF_PDMA_BASE, CONN_HIF_ON_BASE, CONN_MCU_CFG_ON_BASE, CONN_MCU_CIRQ_BASE, CONN_TOP_MISC_ON_BASE);
+
+    // 4. Ungate AUDIO_TOP_CON0 (0x1122_0000: clear PDN_AFE, PDN_22M, PDN_24M, PDN_ADC, PDN_DAC, PDN_TML)
     safe_mmio_write32(AUDIO_TOP_CON0, 0x0000_0000);
 
     // Populate first 256 stereo frames (1,024 bytes) of Audio SRAM (0x1122_1000..0x1122_1400)
@@ -1329,18 +1410,24 @@ fn init_studio_board5_afe_smartpa_connsys() -> StudioBoard5Diag {
         safe_mmio_write32(AUDIO_SRAM_BASE + i * 4, stereo_word);
     }
 
-    // Configure AFE DL1 DMA ring buffer (0x1122_1000..0x1122_13FF) + interconnect + ADDA DL SRC2 + DAC_CON0
+    // Configure AFE DL1 DMA ring buffer + Connsys I2S (0x1122_0C78) + Hostless FM DL (CONN5_1/CONN6_1) + VUL2 (CONN32_1/CONN33_1)
     safe_mmio_write32(AFE_DL1_BASE, AUDIO_SRAM_BASE as u32);
     safe_mmio_write32(AFE_DL1_END, (AUDIO_SRAM_BASE + 0x03FF) as u32);
     safe_mmio_write32(AFE_CONN1, 1 << 21); // I_DL1_CH1 -> O_DAC_L
     safe_mmio_write32(AFE_CONN2, 1 << 22); // I_DL1_CH2 -> O_DAC_R
+    safe_mmio_write32(AFE_CONN5_1, 1 << 0); // I_CONNSYS_I2S_CH1 -> O_GAIN1_IN_CH1 (Hostless FM DL)
+    safe_mmio_write32(AFE_CONN6_1, 1 << 1); // I_CONNSYS_I2S_CH2 -> O_GAIN1_IN_CH2 (Hostless FM DL)
+    safe_mmio_write32(AFE_CONN32_1, 1 << 0); // I_CONNSYS_I2S_CH1 -> O_UL2_CH1 (VUL2 Capture)
+    safe_mmio_write32(AFE_CONN33_1, 1 << 1); // I_CONNSYS_I2S_CH2 -> O_UL2_CH2 (VUL2 Capture)
+    safe_mmio_write32(AFE_CONNSYS_I2S_CON, 0x0009_0009); // Enable Connsys I2S slave @ 0x1122_0c78
+    let _ = safe_mmio_read32(AFE_CONNSYS_I2S_MON); // Monitor @ 0x1122_0c7c
     safe_mmio_write32(AFE_ADDA_DL_SRC2_CON0, 0x8300_1801); // 48 kHz DL SRC2 enable
     safe_mmio_write32(AFE_ADDA_DL_SRC2_CON1, 0xF74F_0000); // Unity digital gain
     safe_mmio_write32(AFE_ADDA_UL_DL_CON0, 0x0000_0001); // ADDA UL/DL enable
     safe_mmio_write32(AFE_DAC_CON1, 0x0000_0009); // DL1 48 kHz
     safe_mmio_write32(AFE_DAC_CON0, 0x0000_000B); // AFE_ON (bit 0) | DL1_ON (bit 1) | VUL_ON (bit 3)
 
-    // 4. Probe & enable Awinic AW87xxx SmartPA #0 (0x58) and SmartPA #1 (0x59) on I2C4 (0x1100_4000)
+    // 5. Probe & enable Awinic AW87xxx SmartPA #0 (0x58) and SmartPA #1 (0x59) on I2C4 (0x1100_4000)
     let (pa58_id_raw, pa58_stat) = i2c4_read_reg8(0x58, 0x00);
     let _ = i2c4_write_reg8(0x58, 0x01, 0x07); // SYSCTRL: EN_SW | EN_PA | EN_BOOST
     let _ = i2c4_write_reg8(0x58, 0x02, 0x09); // MODECTRL: Class-D / Spk
@@ -1353,7 +1440,7 @@ fn init_studio_board5_afe_smartpa_connsys() -> StudioBoard5Diag {
     let _ = i2c4_write_reg8(0x59, 0x05, 0x0C);
     let (pa59_ctrl_raw, _) = i2c4_read_reg8(0x59, 0x01);
 
-    // 5. Read back live AFE, Audio SRAM, MT6358 PMIC, and MT6631 CONNSYS hardware registers
+    // 6. Read back live AFE, Audio SRAM, MT6358 PMIC, and bus-protection-gated CONNSYS registers
     StudioBoard5Diag {
         pa58_chipid: pa58_id_raw,
         pa58_sysctrl: pa58_ctrl_raw,
@@ -1369,7 +1456,7 @@ fn init_studio_board5_afe_smartpa_connsys() -> StudioBoard5Diag {
         mt6358_audenc0: pwrap_read16(MT6358_AUDENC_ANA_CON0),
         mt6358_auxadc0: pwrap_read16(MT6358_AUXADC_ADC0),
         mt6358_accdet: pwrap_read16(MT6358_ACCDET_CON14),
-        consys_hw_ver: safe_mmio_read32(CONNSYS_MCU_BASE),
+        consys_hw_ver: safe_read_consys_hw_ver(),
         spm_conn_pwr: safe_mmio_read32(SPM_CONN_PWR_CON),
         btif_lsr: safe_mmio_read32(BTIF_BASE + 0x0014),
     }
@@ -1382,7 +1469,7 @@ fn refresh_studio_board5_diag(diag: &mut StudioBoard5Diag) {
     diag.afe_dl1_cur = safe_mmio_read32(AFE_DL1_CUR);
     diag.mt6358_auddec0 = pwrap_read16(MT6358_AUDDEC_ANA_CON0);
     diag.mt6358_auxadc0 = pwrap_read16(MT6358_AUXADC_ADC0);
-    diag.consys_hw_ver = safe_mmio_read32(CONNSYS_MCU_BASE);
+    diag.consys_hw_ver = safe_read_consys_hw_ver();
 }
 
 /// Polls the live `MT6358` PMIC (`AUXADC`, `AUDENC` Knowles Dual-Mic `AIN0/AIN2`, `TOPSTATUS`)
@@ -1431,8 +1518,9 @@ pub struct Mt6631HqaFrameHeader {
     pub sequence: u16,
 }
 
-/// Steps the bare-metal MediaTek `MT6631` CONNSYS (`0x1800_0000`) `HQA` (`0x1814_2880`)
-/// diagnostic state machine + `FMSYS` (`0x1800_6000`) 65.0..108.0 MHz FM Radio & RDS decoder
+/// Steps the bare-metal MediaTek `MT6631` CONNSYS (`consys@18002000` + `btif@1100c000`)
+/// Wi-Fi `HQA` (`0x1814_2880`) + STP-over-BTIF FM Basic Operations (`FM_TUNE_OPCODE = 0x09`,
+/// `AFE_CONNSYS_I2S_CON = 0x1122_0C78`) 65.0..108.0 MHz FM Radio & RDS state machine
 /// in 100% integer arithmetic (100 kHz steps: `885` = 88.5 MHz, `915` = 91.5 MHz, `1079` = 107.9 MHz).
 #[inline(always)]
 fn step_mt6631_connsys_hqa_and_fm_rds(
