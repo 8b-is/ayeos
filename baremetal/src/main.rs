@@ -26,6 +26,18 @@ mod device_tree;
 mod board_screen;
 #[cfg(feature = "board-report")]
 mod board_pages;
+#[cfg(feature = "usb-report")]
+mod usb_control;
+#[cfg(feature = "usb-report")]
+mod usb_board;
+#[cfg(feature = "usb-report")]
+mod usb_phy;
+
+// Written by the exception vector; Board4 uses it to stop after skipped faults.
+#[no_mangle]
+static mut AYEOS_FAULT_COUNT: u64 = 0;
+#[cfg(feature = "usb-report")]
+include!("usb_runtime.rs");
 
 struct PhoneCanvas {
     base: usize,
@@ -223,7 +235,9 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     let (base, stride) = discover_lk_framebuffer(dtb_phys_addr);
     clear_lk_boot_overlays(base, stride * SCREEN_H * 4);
-    #[cfg(feature = "board-report")]
+    #[cfg(feature = "usb-report")]
+    screen_usb(dtb_phys_addr, base, stride);
+    #[cfg(all(feature = "board-report", not(feature = "usb-report")))]
     screen_board(dtb_phys_addr, base, stride);
     let mut canvas = PhoneCanvas { base, stride };
     let mut frame = 0u64;
@@ -345,6 +359,13 @@ _exception_vectors:
     .endr
 
 _skip_faulting_insn:
+    stp     x9, x10, [sp, #-16]!
+    adrp    x9, AYEOS_FAULT_COUNT
+    add     x9, x9, :lo12:AYEOS_FAULT_COUNT
+    ldr     x10, [x9]
+    add     x10, x10, #1
+    str     x10, [x9]
+    ldp     x9, x10, [sp], #16
     stp     x29, x30, [sp, #-16]!
     mrs     x29, CurrentEL
     lsr     x29, x29, #2
