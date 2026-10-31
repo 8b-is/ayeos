@@ -20,16 +20,125 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 mod dashboard;
+#[cfg(feature = "board-report")]
+mod device_tree;
+#[cfg(feature = "board-report")]
+mod board_screen;
 
 struct PhoneCanvas {
     base: usize,
     stride: usize,
 }
 
+/// Read only the FDT passed by the bootloader. The boot ABI must provide a
+/// readable contiguous blob; address/size checks cannot establish that mapping.
+/// Never log chosen/bootargs, credentials or arbitrary device-tree property data.
+#[cfg(feature = "board-report")]
+fn report_board(address: u64) {
+    use device_tree::Event;
+    uart_puts("AYEOS-BOARD BEGIN schema=1 build=studio-board-report\n");
+    if address < 0x4000_0000 || address > 0xFFFF_FFD8 || address & 3 != 0 {
+        uart_puts("AYEOS-BOARD ERROR boot-pointer\n");
+        return;
+    }
+    let base = address as usize;
+    let magic = u32::from_be(unsafe { read_volatile(base as *const u32) });
+    let size = u32::from_be(unsafe { read_volatile((base + 4) as *const u32) }) as usize;
+    if magic != 0xD00D_FEED || !(40..=device_tree::MAX_BYTES).contains(&size)
+        || address + size as u64 > 0x1_0000_0000 {
+        uart_puts("AYEOS-BOARD ERROR header\n");
+        return;
+    }
+    let blob = unsafe { core::slice::from_raw_parts(base as *const u8, size) };
+    if device_tree::walk(blob, |_| {}).is_err() {
+        uart_puts("AYEOS-BOARD ERROR malformed-fdt\n");
+        return;
+    }
+    let mut records = 0usize;
+    let mut omitted = false;
+    let mut names = [""; 32];
+    let mut depth = 0usize;
+    let mut hex = [0u8; 18];
+    let result = device_tree::walk(blob, |event| {
+        pet_mediatek_watchdog();
+        match event {
+            Event::Begin(name) => { names[depth] = name; depth += 1; }
+            Event::End => { depth -= 1; }
+            Event::Property(name, value) => {
+                if !matches!(name, "compatible" | "reg" | "status" | "clocks" | "clock-names"
+                    | "interrupts" | "interrupt-parent" | "phandle" | "#address-cells"
+                    | "#size-cells" | "ranges" | "dmas" | "dma-names" | "pinctrl-0") { return; }
+                if records == 1024 { omitted = true; return; }
+                records += 1;
+                uart_puts("AYEOS-BOARD path=");
+                for part in &names[..depth] { uart_puts(part); uart_puts("/"); }
+                uart_puts(" property="); uart_puts(name); uart_puts(" bytes=");
+                uart_puts(format_u64_hex(value.len() as u64, &mut hex));
+                uart_puts(" hex=");
+                for byte in value.iter().take(128) {
+                    uart_putc(b"0123456789abcdef"[(byte >> 4) as usize]);
+                    uart_putc(b"0123456789abcdef"[(byte & 15) as usize]);
+                }
+                if value.len() > 128 { uart_puts(" [truncated]"); }
+                uart_puts("\n");
+            }
+        }
+    });
+    if result.is_err() { uart_puts("AYEOS-BOARD ERROR changed-fdt\n"); }
+    else if omitted { uart_puts("AYEOS-BOARD END record-limit\n"); }
+    else { uart_puts("AYEOS-BOARD END parsed-not-hardware-verified\n"); }
+}
+
 impl dashboard::Canvas for PhoneCanvas {
     fn pixel(&mut self, x: usize, y: usize, color: u32) {
         put_pixel(self.base, self.stride, x, y, color);
     }
+}
+
+#[cfg(feature = "board-report")]
+fn screen_board(address: u64, base: usize, stride: usize) -> ! {
+    use core::fmt::Write;
+    for y in 0..SCREEN_H {
+        for x in 0..SCREEN_W { put_pixel(base, stride, x, y, 0xFF05060A); }
+        pet_mediatek_watchdog();
+    }
+    let mut row = 0usize;
+    let mut emit = |text: &str| {
+        if row < 85 {
+            draw_text_opaque_scaled(base, stride, 20, 68 + row * 18, 1,
+                text, 0xFF62E6C9, 0xFF05060A, 0);
+            row += 1;
+            flush_dcache_range(base, stride * SCREEN_H * 4);
+        }
+        pet_mediatek_watchdog();
+    };
+    emit("AYEOS 5.4.0-studio-board1 / SCREEN DIAGNOSTIC");
+    let mut line = board_screen::Line::new();
+    let _ = write!(line, "Entry x0={:016x} framebuffer={:016x} stride={}", address, base, stride);
+    emit(line.text());
+    emit("Memory readability requires bootloader ABI; faults are not validation.");
+    emit("Stage: checking FDT header (if stuck here, report this photograph)");
+    if address < 0x4000_0000 || address > 0xFFFF_FFD8 || address & 7 != 0 {
+        emit("FDT POINTER REJECTED: range or 8-byte alignment");
+    } else {
+        // The inherited boot environment must map this contiguous memory.
+        // Numeric bounds cannot prove that contract or recover skipped loads.
+        let magic = u32::from_be(unsafe { read_volatile(address as *const u32) });
+        let size = u32::from_be(unsafe { read_volatile((address + 4) as *const u32) }) as usize;
+        let mut line = board_screen::Line::new();
+        let _ = write!(line, "FDT magic={:08x} totalsize={} bytes", magic, size);
+        emit(line.text());
+        if magic != 0xD00D_FEED || !(40..=device_tree::MAX_BYTES).contains(&size)
+            || address + size as u64 > 0x1_0000_0000 {
+            emit("FDT HEADER REJECTED");
+        } else {
+            emit("Stage: parsing bounded FDT");
+            let blob = unsafe { core::slice::from_raw_parts(address as *const u8, size) };
+            board_screen::resources(blob, &mut emit);
+        }
+    }
+    emit("HOLD - watchdog only; no USB polling or button actions");
+    loop { pet_mediatek_watchdog(); core::hint::spin_loop(); }
 }
 
 /// Evidence-first studio UI. Hardware bring-up remains experimental; only the
@@ -39,6 +148,8 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     let (base, stride) = discover_lk_framebuffer(dtb_phys_addr);
     clear_lk_boot_overlays(base, stride * SCREEN_H * 4);
+    #[cfg(feature = "board-report")]
+    screen_board(dtb_phys_addr, base, stride);
     let mut canvas = PhoneCanvas { base, stride };
     let mut frame = 0u64;
     let mut moving = false;
