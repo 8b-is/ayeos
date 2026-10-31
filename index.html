@@ -544,8 +544,11 @@
           </div>
 
           <div class="btn-row">
+            <button type="button" class="btn btn-gold" id="btn-ayeos-v51-ota">
+              🔄 Already on AyeOS v5.1? Trigger OTA Reboot to Fastboot (WebUSB 18d1:4ee0)
+            </button>
             <button type="button" class="btn btn-primary" id="btn-adb-bootloader">
-              🔌 1. Connect WebUSB (ADB) &amp; Reboot to Bootloader
+              🔌 Stock Android? Connect WebUSB (ADB) &amp; Reboot to Bootloader
             </button>
             <button type="button" class="btn btn-sec" id="btn-fastboot-probe">
               🔍 Probe Connected Fastboot Device (WebUSB)
@@ -609,10 +612,10 @@ Ready. Waiting for USB device connection...
           </div>
 
           <div style="font-size:12px; font-family:var(--mono); color:var(--mint); margin-bottom:6px;">
-            ONE-LINE TERMINAL OBLITERATOR (Linux / macOS / Crostini):
+            ONE-LINE LAPTOP TERMINAL UPGRADE (Auto-triggers v5.1 USB 0xA8 Reset + /dev/ttyACM0 FASTBOOT + Flashes v5.2.0):
           </div>
           <div class="code-strip">
-            <code id="cli-oneliner">curl -fsSL https://ayeos.com/install.sh | python3 - --ssid "224_5g_P3M8" --yes-obliterate</code>
+            <code id="cli-oneliner">curl -fsSL https://ayeos.com/install.sh | sudo python3 - --ssid "224_5g_P3M8" --yes-obliterate</code>
             <button type="button" class="btn btn-sec" id="btn-copy-cli" style="padding:6px 10px; font-size:11px;">COPY</button>
           </div>
         </section>
@@ -743,7 +746,7 @@ Ready. Waiting for USB device connection...
       // Update CLI one-liner preview
       const safeSsidCli = ssid.replace(/"/g, '\\"');
       const safePskCli = psk.replace(/"/g, '\\"');
-      let cli = `curl -fsSL https://ayeos.com/install.sh | python3 - --ssid "${safeSsidCli}"`;
+      let cli = `curl -fsSL https://ayeos.com/install.sh | sudo python3 - --ssid "${safeSsidCli}"`;
       if (psk) cli += ` --psk "${safePskCli}"`;
       cli += ` --agent "${handle}" --hz ${hz} --yes-obliterate`;
       document.getElementById('cli-oneliner').textContent = cli;
@@ -839,6 +842,41 @@ Ready. Waiting for USB device connection...
       const btn = document.getElementById('btn-copy-cli');
       btn.textContent = 'COPIED!';
       setTimeout(() => { btn.textContent = 'COPY'; }, 1500);
+    });
+
+    // =========================================================================
+    // WebUSB AyeOS Bare-Metal v5.1 -> Fastboot OTA Reset Switch (`0x18D1:0x4EE0`)
+    // =========================================================================
+    document.getElementById('btn-ayeos-v51-ota').addEventListener('click', async () => {
+      if (!('usb' in navigator)) {
+        logTerm('WebUSB unavailable in this browser. Run the 1-line command in your laptop terminal below!', 't-err');
+        return;
+      }
+      try {
+        logTerm('Select your running AyeOS v5.1 device (USB VID 0x18D1, PID 0x4EE0)...', 't-cmd');
+        const device = await navigator.usb.requestDevice({
+          filters: [
+            { vendorId: 0x18d1, productId: 0x4ee0 },
+            { classCode: 0xff, subclassCode: 0xa8 }
+          ]
+        });
+        await device.open();
+        logTerm('Connected to running AyeOS v5.1 node! Sending Magic OTA Reset packet (bRequest=0xA8, wValue=0xA8E0)...', 't-warn');
+        try {
+          await device.controlTransferOut({
+            requestType: 'vendor',
+            recipient: 'device',
+            request: 0xa8,
+            value: 0xa8e0,
+            index: 0
+          });
+        } catch (_) {
+          // Device resets immediately upon receiving 0xA8, so transfer completion may throw NetworkError
+        }
+        logTerm('OTA RESET TRIGGERED! Look at the phone ("OTA RESET -> FASTBOOT!") and hold VOLUME DOWN for 1s so it stops in Fastboot mode, then click "OBLITERATE & FLASH AYEOS v5.2.0 NOW"!', 't-ok');
+      } catch (err) {
+        logTerm(`AyeOS v5.1 WebUSB note: ${err.message}. (Tip: On Linux laptops, run the 1-line sudo command in Step 4 if udev blocks browser USB access, or hold Volume-Down on the phone for 1 second!)`, 't-warn');
+      }
     });
 
     // =========================================================================

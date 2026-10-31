@@ -14,10 +14,13 @@ Zero Floating-Point Arithmetic (100% Integer / Rational Discipline).
 """
 
 import argparse
+import fcntl
+import glob
 import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -99,6 +102,88 @@ def patch_wifi_cmdline(img_bytes, ssid, psk, agent_id, hz):
     return bytes(buf), cmdline_str
 
 
+def trigger_ayeos_v51_usb_ota_switch():
+    """
+    If the connected phone is ALREADY running ayeOS Bare-Metal v5.1 (USB 18d1:4ee0),
+    send the Magic AyeOS Remote OTA Reset control transfer (bRequest=0xA8, wValue=0xA8E0)
+    over usbfs and catch the MediaTek Preloader /dev/ttyACM0 'FASTBOOT' handshake!
+    """
+    triggered = False
+    for devpath in glob.glob("/sys/bus/usb/devices/*"):
+        try:
+            with open(os.path.join(devpath, "idVendor")) as fv:
+                vid = fv.read().strip().lower()
+            with open(os.path.join(devpath, "idProduct")) as fp:
+                pid = fp.read().strip().lower()
+            if vid == "18d1" and pid == "4ee0":
+                with open(os.path.join(devpath, "busnum")) as fb:
+                    busnum = int(fb.read().strip())
+                with open(os.path.join(devpath, "devnum")) as fd_num:
+                    devnum = int(fd_num.read().strip())
+                usbfs = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
+                print(
+                    f"[*] Found running ayeOS Bare-Metal v5.1 node at {usbfs} (18d1:4ee0)!"
+                )
+                print(
+                    "[*] Sending Magic AyeOS OTA Reset Switch (bRequest=0xA8, wValue=0xA8E0)..."
+                )
+                fd = os.open(usbfs, os.O_RDWR)
+                # USBDEVFS_CONTROL ioctl on Linux x86_64 = 0xC0185500
+                USBDEVFS_CONTROL = 0xC0185500
+                ctrl = struct.pack("<BBHHHQI", 0x40, 0xA8, 0xA8E0, 0, 0, 0, 1000)
+                try:
+                    fcntl.ioctl(fd, USBDEVFS_CONTROL, ctrl)
+                except Exception:
+                    pass
+                USBDEVFS_RESET = 21780
+                try:
+                    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+                except Exception:
+                    pass
+                os.close(fd)
+                triggered = True
+        except Exception:
+            pass
+
+    if not triggered:
+        print(
+            "[*] Tip: If phone is running ayeOS v5.1, you can also hold Volume-Down on the phone for 1 second to trigger 'OTA RESET -> FASTBOOT!'."
+        )
+
+    print(
+        "[*] Watching /dev/ttyACM0..1 for MediaTek Preloader 'FASTBOOT' handshake (up to 12s)..."
+    )
+    TIOCEXCL = 0x540C
+    start_ts = int(time.time())
+    while int(time.time()) - start_ts < 12:
+        # Check if fastboot already sees the device
+        fb_check = subprocess.run(
+            ["fastboot", "devices"], capture_output=True, text=True, check=False
+        )
+        if fb_check.stdout.strip():
+            print(f"[+] Device entered Fastboot mode: {fb_check.stdout.strip()}")
+            return
+        for dev in ("/dev/ttyACM0", "/dev/ttyACM1"):
+            if os.path.exists(dev):
+                try:
+                    fd = os.open(dev, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+                    try:
+                        fcntl.ioctl(fd, TIOCEXCL)
+                    except Exception:
+                        pass
+                    for _ in range(120):
+                        try:
+                            os.write(fd, b"FASTBOOT")
+                        except Exception:
+                            pass
+                    os.close(fd)
+                    print(f"[+] Sent 'FASTBOOT' handshake to {dev}! Waiting 2s for LK...")
+                    time.sleep(2)
+                    return
+                except Exception:
+                    pass
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ayeOS.com Sovereign Device Obliterator & Bare-Metal v5.2.0 Flasher"
@@ -164,9 +249,10 @@ def main():
         return 1
 
     if adb_bin:
-        print("[*] Checking for ADB-connected device to reboot into bootloader...")
+        print("[*] Checking for ADB-connected device or running ayeOS v5.1 node...")
         subprocess.run([adb_bin, "reboot", "bootloader"], check=False)
-        time.sleep(2)
+
+    trigger_ayeos_v51_usb_ota_switch()
 
     print("[*] Waiting for device in Fastboot mode (connect USB or hold Vol-Down + Power)...")
     with tempfile.NamedTemporaryFile(prefix="ayeos_v5_2_", suffix=".img", delete=False) as tf:
