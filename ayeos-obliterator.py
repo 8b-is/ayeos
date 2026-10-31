@@ -163,7 +163,15 @@ def trigger_ayeos_v51_usb_ota_switch():
         if fb_check.stdout.strip():
             print(f"[+] Device entered Fastboot mode: {fb_check.stdout.strip()}")
             return
-        for dev in ("/dev/ttyACM0", "/dev/ttyACM1"):
+        espressif_real = set()
+        for ep in glob.glob("/dev/serial/by-id/*Espressif*"):
+            try:
+                espressif_real.add(os.path.realpath(ep))
+            except Exception:
+                pass
+        for dev in glob.glob("/dev/ttyACM*"):
+            if os.path.realpath(dev) in espressif_real:
+                continue
             if os.path.exists(dev):
                 try:
                     fd = os.open(dev, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)

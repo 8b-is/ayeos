@@ -13,9 +13,9 @@
   "signature_hex": "851a830de26a4027701cdde2609c6217034aa9186ef55a4f8636aaec37ebfa4b",
   "signature_blake3_hex": "156a24eee8120ab3e6971fbda1b81af462f6796f8fd760dae0f26b1ca9bb03f5",
   "primary_ota_urls": [
+    "https://ayeos.com/g8t/ota/blu-g75/boot.img",
     "https://g8t.is/g8t/ota/blu-g75/boot.img",
     "https://8b.is/g8t/ota/blu-g75/boot.img",
-    "https://raw.githubusercontent.com/8b-is/g8t/main/firmware/blu_g75_g1170/boot_b/ayeos_boot_b_gz.img",
-    "http://192.168.151.14:8788/g8t/ota/blu-g75/boot.img"
+    "https://raw.githubusercontent.com/8b-is/g8t/main/firmware/blu_g75_g1170/boot_b/ayeos_boot_b_gz.img"
   ]
 }

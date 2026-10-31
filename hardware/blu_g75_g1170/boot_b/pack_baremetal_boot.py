@@ -52,10 +52,10 @@ manifest = {
     "domain_tag": "G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1",
     "signature_hex": sig_hex,
     "primary_ota_urls": [
+        "https://ayeos.com/g8t/ota/blu-g75/boot.img",
         "https://g8t.is/g8t/ota/blu-g75/boot.img",
         "https://8b.is/g8t/ota/blu-g75/boot.img",
         "https://raw.githubusercontent.com/8b-is/g8t/main/firmware/blu_g75_g1170/boot_b/ayeos_boot_b_gz.img",
-        "http://192.168.151.14:8788/g8t/ota/blu-g75/boot.img",
     ],
 }
 manifest_path = os.path.join(BOOT_DIR, "manifest.json")
