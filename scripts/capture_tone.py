@@ -23,6 +23,94 @@ ERRORS = ["none", "gate", "timer", "deadline", "fault", "busy", "timeout",
           "nack", "controller", "fifo", "readback", "restore", "capacity"]
 
 
+def complete_sequence():
+    """Successful tone1-v1 journal, from baremetal/src/tone.rs (not acoustic proof).
+
+    Failure journals may be prefixes with independent cleanup; only complete
+    results must contain this entire sequence. Values are register encodings.
+    """
+    rows = []
+
+    def add(kind, phase, address=0, mask=0, expected=0):
+        rows.append((kind, phase, address, mask, expected))
+
+    add(5, 0, expected=10)
+    for reg in (0x040e, 0x000a, 0x1ac4, 0x1ad2):
+        add(1, 0, reg)
+    for addr in (0x5800, 0x5900):
+        add(3, 0, addr, 255, 0x23)
+    for reg in (0x2288, 0x228a, 0x2408, 0x2414, 0x2416,
+                0x2388, 0x238a, 0x238c, 0x238e):
+        add(1, 0, reg)
+    add(2, 1, 0x22c0, 0xc0, 0x40)
+    add(2, 1, 0x2416, 0xc, 0)
+    for addr in (0x5800, 0x5900):
+        for reg, expected in ((2, 0), (0, 0x23), (2, 0)):
+            add(4, 1, addr | reg, 255, expected)
+    for reg, mask, value in ((0x07ac, 0x2000, 0x2000), (0x2422, 0x10, 0),
+                             (0x2394, 2, 0), (0x2394, 1, 1),
+                             (0x220c, 0x64, 0), (0x220c, 2, 0)):
+        add(2, 1, reg, mask, value)
+    add(5, 1, expected=250)
+    add(2, 1, 0x2292, 0x46, 0)
+    add(2, 1, 0x2292, 0x80, 0)
+    add(5, 1, expected=250)
+    add(2, 1, 0x2288, 1, 1)
+    for reg, value in ((0x229a, 6), (0x2296, 0xcba1), (0x229a, 3), (0x229a, 0xb)):
+        add(2, 1, reg, 0xffff, value)
+    for reg, mask, value in ((0x22c0, 0xff3f, 0), (0x22c2, 0xffff, 1),
+                             (0x2292, 1, 1), (0x22c0, 0x80, 0x80), (0x228a, 1, 1)):
+        add(2, 1, reg, mask, value)
+    for reg, value in ((0x240c, 0x4000), (0x223c, 1), (0x223e, 0x2c),
+                       (0x223a, 1), (0x2242, 3), (0x2240, 0)):
+        add(2, 1, reg, 0xffff, value)
+    add(5, 1, expected=250)
+    add(2, 1, 0x2424, 0x1055, 0x1055)
+    add(2, 1, 0x2426, 0xffff, 1)
+    add(5, 1, expected=100)
+    for reg, mask, value in (
+            (0x241e, 7, 0), (0x2488, 0x7ff, 0x10b), (0x2416, 0x10, 0x10),
+            (0x248a, 0xffff, 0xf9f), (0x2420, 0xffff, 0x55),
+            (0x241e, 0xff80, 0x4900), (0x2420, 0xffff, 0x55),
+            (0x2416, 0x100, 0x100), (0x241a, 0xffff, 0), (0x241c, 0xffff, 0),
+            (0x2416, 2, 2), (0x2416, 1, 1), (0x248a, 0xf9f, 0xf9f),
+            (0x2422, 1, 1), (0x2408, 6, 6), (0x241a, 0xffff, 1), (0x2416, 0xc, 4)):
+        add(2, 1, reg, mask, value)
+    music = ((1, 2), (2, 0x3f), (3, 0x36), (4, 0x3b), (5, 0x5a),
+             (0x60, 0xf0), (0x61, 0x14), (0x62, 3), (0x63, 1), (0x64, 0x59),
+             (0x65, 0x7f), (0x66, 0x50), (0x67, 0x19),
+             (0x79, 0), (0x7a, 0), (0x7b, 0), (0x7c, 0), (0x7d, 0))
+    for addr in (0x5800, 0x5900):
+        for reg, value in music:
+            add(4, 1, addr | reg, 255, 0x2b if addr == 0x5900 and reg == 4 else value)
+    add(5, 1, expected=30000)
+    add(2, 2, 0x22c0, 0x40, 0)
+    add(2, 3, 0x22c0, 0xc0, 0x40)
+    add(2, 3, 0x2416, 0xc, 0)
+    for addr in (0x5802, 0x5902):
+        add(4, 3, addr, 255, 0)
+    for reg, mask, value in (
+            (0x229a, 0xffff, 0), (0x2296, 0xffff, 0xcba0), (0x228a, 1, 0),
+            (0x2408, 6, 0), (0x2422, 1, 0), (0x248a, 0xffff, 0xf9f),
+            (0x2416, 1, 0), (0x2416, 2, 0), (0x241a, 0xff00, 0),
+            (0x241a, 0xff00, 0x200), (0x2420, 0x100, 0x100), (0x241e, 7, 4),
+            (0x2488, 0xffff, 0), (0x2426, 1, 0), (0x2424, 0x1055, 0),
+            (0x2240, 1, 1), (0x2288, 1, 0), (0x2292, 0xc7, 0xc6),
+            (0x220c, 0x66, 0x66), (0x2394, 1, 0), (0x2422, 0x10, 0x10),
+            (0x07ac, 0x2000, 0)):
+        if reg in (0x2292, 0x220c):
+            add(5, 3, expected=250)
+        add(2, 3, reg, mask, value)
+    for addr in (0x5802, 0x5902):
+        add(3, 4, addr, 255, 0)
+    for reg, _, _ in OFF:
+        add(1, 4, reg)
+    return tuple(rows)
+
+
+COMPLETE_SEQUENCE = complete_sequence()
+
+
 class Usb(alpha.Usb):
     ALLOWED = alpha.Usb.ALLOWED + ((0xc0, 0xb6), (0xc0, 0xb7))
 
@@ -45,6 +133,7 @@ def decode(data):
     events = []
     observed = {}
     prior_phase = 0
+    signatures = []
     for i in range(w[9]):
         tick, kind, phase, error, addr, mask, expected, actual = struct.unpack_from(
             "<QBBHHHII", data, 256+i*24)
@@ -55,6 +144,29 @@ def decode(data):
             raise ValueError("odd PMIC address")
         if kind in (3, 4) and (addr >> 8 not in (0x58, 0x59) or addr & 255 > 127):
             raise ValueError("unexpected amplifier address")
+        if kind <= 4:
+            width = 0xffff if kind <= 2 else 0xff
+            if expected > width or (error in (0, 10) and actual > width):
+                raise ValueError("out-of-range register value")
+            if kind == 1 and (mask or expected):
+                raise ValueError("PMIC read has update fields")
+            if kind == 2 and not mask:
+                raise ValueError("PMIC update has empty mask")
+            if kind in (3, 4) and mask != 255:
+                raise ValueError("amplifier event must use full-byte mask")
+            if kind == 3 and expected != (0x23 if addr & 255 == 0 else 0):
+                raise ValueError("invalid amplifier read expectation")
+            if kind in (1, 3) and (phase not in (0, 4) or error == 10):
+                raise ValueError("invalid read phase or readback error")
+            if kind in (2, 4) and phase not in (1, 2, 3):
+                raise ValueError("invalid write phase")
+            if error == 10 and actual & mask == expected & mask:
+                raise ValueError("readback error has matching observation")
+        elif (addr or mask or phase not in (0, 1, 3) or error == 10
+              or expected not in (10, 100, 250, 30000)
+              or (not error and actual < expected * 13)):
+            raise ValueError("invalid delay evidence")
+        signatures.append((kind, phase, addr, mask, expected))
         if phase == 4 and kind in (1, 3):
             key = (kind, addr)
             if key in observed:
@@ -80,8 +192,43 @@ def decode(data):
                       or closed-opened < 3250000 or opened-start >= 26000000
                       or any(e["error"] != "none" for e in events)):
         raise ValueError("inconsistent successful tone result")
-    if w[4] == 2 and (not w[5] or off or opened or closed or any(e["kind"] in (2, 4) for e in events)):
-        raise ValueError("preflight reject includes audio writes or Off claim")
+    if w[4] == 1:
+        if tuple(signatures) != COMPLETE_SEQUENCE:
+            raise ValueError("complete result lacks the successful tone1 operation sequence")
+        prior_tick = start
+        cleanup = [e for e in events if e["phase"] == 3]
+        for e in events:
+            tick = e["tick"]
+            if not prior_tick <= tick <= end:
+                raise ValueError("complete event timestamps out of order or bounds")
+            if ((e["phase"] < 2 and tick > opened)
+                    or (e["phase"] >= 2 and tick < opened)
+                    or (e["phase"] == 4 and tick < closed)
+                    or (e["kind"] == 5 and tick + e["observed"] > end)):
+                raise ValueError("complete event timestamp contradicts phase or delay")
+            prior_tick = tick
+        if (cleanup[0]["tick"] - opened < 3250000
+                or any(e["tick"] > closed for e in cleanup[:4])
+                or any(e["tick"] < closed for e in cleanup[4:])):
+            raise ValueError("complete stop timestamps contradict the tone window")
+        preflight = {int(e["address"], 16): e["observed"]
+                     for e in events if e["phase"] == 0 and e["kind"] != 5}
+        predicates = [(0x040e, 0xffff, 0x5aa5), (0x000a, 0xff00, 0x5800),
+                      (0x1ac4, 1, 1), (0x1ad2, 0x8000, 0x8000),
+                      (0x5800, 255, 0x23), (0x5900, 255, 0x23)] + [
+            (reg, mask, 0) for reg, mask in ((0x2288, 1), (0x228a, 1),
+            (0x2408, 0xffff), (0x2414, 0xffff), (0x2416, 15),
+            (0x2388, 0xffff), (0x238a, 0xffff), (0x238c, 0xffff), (0x238e, 0xffff))]
+        if any(preflight[reg] & mask != value for reg, mask, value in predicates):
+            raise ValueError("complete result contradicts preflight gates")
+    if w[4] == 2 and (not w[5] or w[6] or off or opened or closed or end
+                      or any(e["phase"] != 0 for e in events)):
+        raise ValueError("preflight reject includes cleanup, audio writes or Off claim")
+    if w[4] != 2:
+        if not w[8] and not w[6]:
+            raise ValueError("failed post-arm restoration lacks cleanup error")
+        if tuple(s for s in signatures if s[1] == 4) != COMPLETE_SEQUENCE[-17:]:
+            raise ValueError("post-arm result lacks final independent Off observations")
     if w[4] == 3 and (off != OFF_MASK or not (w[5] or w[6])):
         raise ValueError("inconsistent aborted result")
     if w[4] == 4 and off == OFF_MASK:
