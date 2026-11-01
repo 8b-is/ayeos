@@ -111,9 +111,10 @@ fn tone_run(
 
 // MT6358_AFE_SGEN_CFG1 (0x22c2) bits 3:0 are a frequency multiplier N = 1..15
 // (f = (8000 Hz / 64) * N = 125 Hz * N; N=0 / N=16 is 0 Hz DC silence!).
-// Map the 24 semitones across 1..15 in strictly ascending pitch order.
+// Map the 14 white keys (indices 0,2,4,5,7,9,11,12,14,16,17,19,21,23) to strictly
+// distinct ascending multipliers N = 1..14 (125 Hz .. 1750 Hz).
 const SEMITONE_DIVS: [u16; 24] = [
-    1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 10, 11, 12, 12, 13, 14, 14, 15,
+    1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14,
 ];
 
 fn div_to_key_index(div: u16) -> u8 {
@@ -130,8 +131,8 @@ fn div_to_key_index(div: u16) -> u8 {
         10 => 16,
         11 => 17,
         12 => 19,
-        13 => 20,
-        14 => 21,
+        13 => 21,
+        14 => 23,
         _ => 23,
     }
 }
@@ -224,6 +225,7 @@ fn tone_debug_exec(
     active_row: &mut usize,
     qwave_scroll: &mut usize,
     qwave_tab: &mut usize,
+    qwave_full_mode: &mut bool,
     studio_visible: bool,
     tone_gate: bool,
 ) {
@@ -503,11 +505,37 @@ fn tone_debug_exec(
                     control.tracker_active_row = *active_row as u8;
                     control.dbg_status = 1;
                     control.dbg_result = (0x0200 | (row as u32)) | (outcome << 16);
+                } else if phone_studio::mode_toggle_at_point(x, y) {
+                    *qwave_full_mode = !*qwave_full_mode;
+                    if studio_visible {
+                        let mut canvas = PhoneCanvas { base, stride };
+                        if *qwave_full_mode {
+                            phone_studio::paint_qwave_top_viewport(
+                                &mut canvas,
+                                glyph_8x16_hd,
+                                *qwave_scroll,
+                                *qwave_tab,
+                            );
+                        } else {
+                            phone_studio::paint_studio_top_viewport(&mut canvas, glyph_8x16_hd);
+                        }
+                        flush_dcache_range(base, stride * SCREEN_H * 4);
+                    }
+                    control.dbg_status = 1;
+                    control.dbg_result = 0x0500 | (*qwave_full_mode as u32);
                 } else if let Some(tab) = phone_studio::tab_at_point(x, y) {
                     *qwave_tab = tab;
                     *qwave_scroll = 0;
                     if studio_visible {
                         let mut canvas = PhoneCanvas { base, stride };
+                        if *qwave_full_mode {
+                            phone_studio::paint_qwave_top_viewport(
+                                &mut canvas,
+                                glyph_8x16_hd,
+                                *qwave_scroll,
+                                *qwave_tab,
+                            );
+                        }
                         phone_studio::paint_qwave_browser(
                             &mut canvas,
                             glyph_8x16_hd,
@@ -527,6 +555,14 @@ fn tone_debug_exec(
                     }
                     if studio_visible {
                         let mut canvas = PhoneCanvas { base, stride };
+                        if *qwave_full_mode {
+                            phone_studio::paint_qwave_top_viewport(
+                                &mut canvas,
+                                glyph_8x16_hd,
+                                *qwave_scroll,
+                                *qwave_tab,
+                            );
+                        }
                         phone_studio::paint_qwave_browser(
                             &mut canvas,
                             glyph_8x16_hd,
@@ -614,6 +650,14 @@ fn tone_debug_exec(
                 }
                 if studio_visible {
                     let mut canvas = PhoneCanvas { base, stride };
+                    if *qwave_full_mode {
+                        phone_studio::paint_qwave_top_viewport(
+                            &mut canvas,
+                            glyph_8x16_hd,
+                            *qwave_scroll,
+                            *qwave_tab,
+                        );
+                    }
                     phone_studio::paint_qwave_browser(
                         &mut canvas,
                         glyph_8x16_hd,

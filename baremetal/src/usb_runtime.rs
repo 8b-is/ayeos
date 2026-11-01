@@ -508,6 +508,8 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 #[cfg(feature = "tone-report")]
                 let mut qwave_tab = 0usize;
                 #[cfg(feature = "tone-report")]
+                let mut qwave_full_mode = true;
+                #[cfg(feature = "tone-report")]
                 if studio_visible && tone_gate {
                     let (outcome, off) = tone_play_live(
                         tone_gate,
@@ -523,6 +525,18 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     device.control.tracker_last_outcome = outcome;
                     device.control.tracker_last_off = off;
                     device.control.tracker_active_row = active_row as u8;
+                }
+                #[cfg(feature = "tone-report")]
+                if studio_visible && qwave_full_mode {
+                    phone_studio::paint_qwave_fullscreen(
+                        &mut PhoneCanvas { base, stride },
+                        glyph_8x16_hd,
+                        qwave_scroll,
+                        qwave_tab,
+                        active_row,
+                        tone::PATTERN[active_row].key_index,
+                    );
+                    flush_dcache_range(base, stride * SCREEN_H * 4);
                 }
                 if init == usb_phy::Init::Ready {
                     init = usb_phy::connect(&mut io);
@@ -598,6 +612,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                 &mut active_row,
                                 &mut qwave_scroll,
                                 &mut qwave_tab,
+                                &mut qwave_full_mode,
                                 studio_visible,
                                 tone_gate,
                             );
@@ -620,6 +635,14 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                         qwave_tab = (qwave_tab + 1) % phone_studio::QWAVE_TABS.len();
                                     }
                                     let mut canvas = PhoneCanvas { base, stride };
+                                    if qwave_full_mode {
+                                        phone_studio::paint_qwave_top_viewport(
+                                            &mut canvas,
+                                            glyph_8x16_hd,
+                                            qwave_scroll,
+                                            qwave_tab,
+                                        );
+                                    }
                                     phone_studio::paint_qwave_browser(
                                         &mut canvas,
                                         glyph_8x16_hd,
@@ -650,6 +673,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                             device.control.tracker_last_off = off;
                             device.control.tracker_active_row = active_row as u8;
                         } else if studio_visible
+                            && !qwave_full_mode
                             && device.control.configuration == 1
                             && idle_ticks & 0x3ff == 0
                         {

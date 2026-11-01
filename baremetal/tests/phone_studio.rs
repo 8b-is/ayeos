@@ -311,4 +311,18 @@ fn touch_keyboard_and_tracker_rows_map_every_semitone_and_row() {
     assert_eq!(phone_studio::tab_at_point(10, 1186), None);
     assert_eq!(phone_studio::scroll_at_point(640, 1220), Some(-1));
     assert_eq!(phone_studio::scroll_at_point(640, 1290), Some(1));
+    // Full-screen Qwave Browser top viewport touch hitboxes & bounds
+    assert_eq!(phone_studio::tab_at_point(100, 155), Some(0));
+    assert_eq!(phone_studio::tab_at_point(300, 155), Some(1));
+    assert_eq!(phone_studio::tab_at_point(520, 155), Some(2));
+    assert_eq!(phone_studio::scroll_at_point(640, 290), Some(-1));
+    assert_eq!(phone_studio::scroll_at_point(640, 520), Some(1));
+    assert!(phone_studio::mode_toggle_at_point(600, 84));
+    assert!(!phone_studio::mode_toggle_at_point(100, 84));
+    for tab in 0..3 {
+        for scroll in 0..=phone_studio::QWAVE_MAX_SCROLL {
+            phone_studio::paint_qwave_fullscreen(&mut Bounds, solid, scroll, tab, 0, 0);
+        }
+    }
+    phone_studio::paint_studio_top_viewport(&mut Bounds, solid);
 }

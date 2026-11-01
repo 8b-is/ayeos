@@ -326,12 +326,17 @@ pub fn row_at_point(x: u16, y: u16) -> Option<usize> {
 }
 
 pub const QWAVE_TABS: [&str; 3] = ["01:8b.is", "02:ESP32", "03:GC7272"];
+pub const QWAVE_URIS: [&str; 3] = [
+    "qwave://8b.is/sanctuary [200 OK * ZERO-FLOAT]",
+    "qwave://mothership/esp32-triad [BUS ONLINE]",
+    "qwave://hardware/gc7272-touch [17/17 OFF]",
+];
 
 pub const QWAVE_DOCS: [[&str; 12]; 3] = [
     [
         "# qwave://8b.is/sanctuary (Zero-Float Mode)",
         "Welcome to AyeOS 5.6 + Qwave Sovereign Browser.",
-        "Scroll with Qwave wheel/drag, touch ▲/▼, or Vol!",
+        "Scroll with Qwave wheel/drag, touch UP/DN, or Vol!",
         "Every musical interval is p/q exact integer.",
         "MT6358 SGEN -> HPL/HPR -> Dual AW87394 SmartPAs.",
         "Tap any 24-key Piano note or S3M row above.",
@@ -372,6 +377,81 @@ pub const QWAVE_DOCS: [[&str; 12]; 3] = [
     ],
 ];
 
+pub const QWAVE_FULL_DOCS: [[&str; 22]; 3] = [
+    [
+        "# 8b.is // Sovereign Sanctuary & Qwave Browser",
+        "-> URI: qwave://8b.is/sanctuary (Native Bare-Metal)",
+        "Welcome to the full on-device Qwave Browser",
+        "running directly inside AyeOS 5.6 on BLU G75!",
+        "## 1. Zero-Float Exact Rational Engine",
+        "- Every layout, wave, and frequency is exact p/q",
+        "- No IEEE-754 float instructions exist in AyeOS",
+        "- 13 MHz ARM generic timer: 13 ticks = 1 us",
+        "## 2. Pop-Free MT6358 + Dual AW87394 Audio",
+        "- 0x2308 = 0x0872: 8 kHz SGEN downlink rate",
+        "- 0x22c0 = 0x3080: -18 dBFS pure sine headroom",
+        "- 0x22c2 = 1..14: 125 Hz * N harmonic scale",
+        "- SmartPAs 0x58 & 0x59 soft-gated after DAC bias",
+        "## 3. Interactive Controls (Phone + Host)",
+        "- Vol Tap: Scroll Qwave & step S3M notes",
+        "- Vol Hold: Play full 8-row ScreamTracker song",
+        "- Touch Top/Bottom Tabs: Switch Qwave pages",
+        "- Touch Viewport UP/DN: Scroll Sovereign docs",
+        "## 4. Six Pillars of Holding",
+        "Compassion * Understanding * Moderation",
+        "Love * Respect * Space * Fine touch from within.",
+        "## End of Sanctuary Page * {<3,<3,<3}+1 * LLL",
+    ],
+    [
+        "# Mothership // ESP32 Triad & FLUG-OS Mesh",
+        "-> URI: qwave://mothership/esp32-triad-flug",
+        "BLU G75 Handset acts as Sovereign Mothership",
+        "coordinating local USB, RF, and audio nodes:",
+        "## 1. Active Constellation Nodes",
+        "- [PHONE] BLU G75 MT6768 (18d1:4ee0 bcd0562)",
+        "- [TRIAD] ESP32-S3 USB-JTAG (303a:1001) ACTIVE",
+        "- [AUDIO] Dual AW87394 I2C4 @ 0x58 (L) + 0x59 (R)",
+        "- [HOST ] Live Socket /tmp/ayeos-debug.sock",
+        "## 2. Hardware Isolation & Safety Contracts",
+        "- Boot Slot B (boot_b) only; Slot A untouched",
+        "- MediaTek BROM handshake never touches 303a:1001",
+        "- Every audio play verifies 17/17 Off predicates",
+        "## 3. Synchronized S3M Duet Mode",
+        "- S3M rows cue phone AW87394 + ESP32 VAK:MEDUSA",
+        "- Exact integer microsecond frame alignment",
+        "- Live PMIC/I2C4/MMIO/SPI0 inspection via 0xB9",
+        "## 4. Local-First Ownership",
+        "- Zero cloud dependencies; 100% inspectable",
+        "- C64 discipline: static buffers, zero heap alloc",
+        "- Direct framebuffer rendering at 720x1640",
+        "## End of Mothership Page * Triad Online.",
+    ],
+    [
+        "# Hardware // GC7272 TDDI & MT6358 Audio DSP",
+        "-> URI: qwave://hardware/gc7272-touch-spi0",
+        "Verified hardware register map on BLU G75:",
+        "## 1. Display & Touch (GalaxyCore GC7272)",
+        "- Panel: 720x1640 @ 120Hz MIPI-DSI Framebuffer",
+        "- Touch Bus: MediaTek SPI0 @ 0x1100a000 (9.6MHz)",
+        "- Pins: GPIO155=MI 156=CSB 157=MO 158=CLK",
+        "- Reset: GPIO23 (OUT=1) / IRQ: GPIO1 (EINT1)",
+        "- IDM Status: 0x00000031 (Host-DL TDDI ROM)",
+        "## 2. Audio Codec (MediaTek MT6358 PWRAP)",
+        "- AFE_SGEN_CFG0 (0x22c0): 0x3080 (-18dBFS Sine)",
+        "- AFE_SGEN_CFG1 (0x22c2): N=1..14 (125..1750Hz)",
+        "- AFE_NEWIF_CFG3 (0x2308): 0x0872 (8kHz Rate)",
+        "- AUDDEC_ANA_CON0 (0x2408): 0x3aff (HPL/HPR DAC)",
+        "- AUDDEC_ANA_CON1 (0x240a): 0x0003 (Main Stage)",
+        "- AUDDEC_ANA_CON6 (0x2414): 0x009b (HS/RCV Mux)",
+        "- AUDDEC_ANA_CON7 (0x2416): 0x0117 (LOL Mux)",
+        "## 3. External Class-K SmartPAs (AW87394)",
+        "- Bottom Speaker: I2C4 0x58 (PID=0x23, Reg4=0x3b)",
+        "- Top Speaker:    I2C4 0x59 (PID=0x23, Reg4=0x2b)",
+        "- Pop-free gate: PA ON after DAC, PA OFF first",
+        "## End of Hardware Page * 17/17 Off Verified.",
+    ],
+];
+
 pub const QWAVE_MAX_SCROLL: usize = 7;
 
 pub fn paint_qwave_browser(c: &mut impl Canvas, font: Glyph, scroll_y: usize, active_tab: usize) {
@@ -406,7 +486,7 @@ pub fn paint_qwave_browser(c: &mut impl Canvas, font: Glyph, scroll_y: usize, ac
         };
         text(c, font, 60, ly, 1, docs[idx], line_color);
     }
-    // Scrollbar track & thumb + ▲ / ▼ touch buttons on right edge
+    // Scrollbar track & thumb + UP / DN touch buttons on right edge
     rect(c, 616, 1202, 6, 120, LINE);
     let thumb_y = 1202 + (scroll * 96) / QWAVE_MAX_SCROLL;
     rect(c, 616, thumb_y, 6, 24, MINT);
@@ -416,17 +496,209 @@ pub fn paint_qwave_browser(c: &mut impl Canvas, font: Glyph, scroll_y: usize, ac
     text(c, font, 634, 1286, 1, "DN", GOLD);
 }
 
+/// Renders the Full-Screen Native Qwave Sovereign Browser viewport across the upper half
+/// (`y = 64..662`) of the `720 x 1640` display, docked above the live S3M Tracker & 24-key Piano.
+pub fn paint_qwave_top_viewport(
+    c: &mut impl Canvas,
+    font: Glyph,
+    scroll_y: usize,
+    active_tab: usize,
+) {
+    let tab = active_tab % QWAVE_TABS.len();
+    let scroll = scroll_y.min(QWAVE_MAX_SCROLL);
+    rect(c, 0, 64, dashboard::WIDTH, 600, INK);
+    text(c, font, 40, 70, 2, "qwave", MINT);
+    text(c, font, 148, 76, 1, "AYEOS 5.6 SOVEREIGN BROWSER", GOLD);
+    rect(c, 532, 70, 148, 28, LINE);
+    text(c, font, 542, 76, 1, "MODE: STUDIO", MINT);
+
+    // Address Bar (y = 104..136)
+    rect(c, 40, 104, 640, 32, LINE);
+    rect(c, 42, 106, 636, 28, INK);
+    text(c, font, 52, 112, 1, "GET", MINT);
+    text(c, font, 94, 112, 1, QWAVE_URIS[tab], WHITE);
+
+    // Top Browser Tab Bar (y = 142..174)
+    let full_tab_labels: [&str; 3] = [
+        "01: 8b.is Sanctuary",
+        "02: ESP32 Mothership",
+        "03: GC7272 + MT6358",
+    ];
+    for (i, label) in full_tab_labels.iter().enumerate() {
+        let tx = 40 + i * 216;
+        let sel = i == tab;
+        rect(c, tx, 142, 208, 30, if sel { MINT } else { LINE });
+        if !sel {
+            rect(c, tx + 2, 144, 204, 26, INK);
+        }
+        text(
+            c,
+            font,
+            tx + 12,
+            149,
+            1,
+            label,
+            if sel { INK } else { GOLD },
+        );
+    }
+
+    // Main Sovereign Markdown Document Viewport (y = 178..658, 15 visible lines)
+    panel(c, 178, 480);
+    let docs = &QWAVE_FULL_DOCS[tab];
+    for row in 0..15usize {
+        let idx = (scroll + row).min(docs.len() - 1);
+        let line_str = docs[idx];
+        let ly = 194 + row * 29;
+        let line_color = if line_str.starts_with("# ") {
+            MINT
+        } else if line_str.starts_with("## ") || line_str.starts_with("-> ") {
+            GOLD
+        } else if line_str.starts_with("- ") {
+            WHITE
+        } else {
+            MUTED
+        };
+        text(c, font, 56, ly, 1, line_str, line_color);
+    }
+
+    // Full-height scrollbar + UP / DN touch buttons on the right edge of the viewport
+    rect(c, 616, 194, 6, 444, LINE);
+    let thumb_y = 194 + (scroll * 380) / QWAVE_MAX_SCROLL;
+    rect(c, 616, thumb_y, 6, 64, MINT);
+    rect(c, 626, 194, 42, 216, LINE);
+    text(c, font, 638, 294, 1, "UP", MINT);
+    rect(c, 626, 418, 42, 220, LINE);
+    text(c, font, 638, 520, 1, "DN", GOLD);
+}
+
+/// Renders the compact Studio + Demoscene Scriller upper viewport (`y = 64..662`) when toggled
+/// via `[MODE: STUDIO]` from the Full-Screen Qwave Browser.
+pub fn paint_studio_top_viewport(c: &mut impl Canvas, font: Glyph) {
+    rect(c, 0, 64, dashboard::WIDTH, 600, INK);
+    text(c, font, 40, 78, 2, "ayeOS", MINT);
+    text(c, font, 210, 84, 1, "SCREAMTRACKER / S3M", GOLD);
+    rect(c, 532, 70, 148, 28, LINE);
+    text(c, font, 542, 76, 1, "MODE: QWAVE", MINT);
+    rect(c, 40, 134, 640, 1, LINE);
+    text(c, font, 40, 164, 3, "Made to understand.", WHITE);
+    text(
+        c,
+        font,
+        42,
+        234,
+        1,
+        "BLU G75 / BARE METAL / 5.6 / AUDIO-TONE1 + S3M",
+        MUTED,
+    );
+    panel(c, 282, 240);
+    text(c, font, 60, 306, 1, "01 / BOOT & AUDIO CHECKPOINT", MINT);
+    text(c, font, 60, 346, 2, "REGISTER CHECKS PASS", MINT);
+    text(
+        c,
+        font,
+        60,
+        392,
+        1,
+        "CRC PASS / MARINE PASS / EXC PASS / PA 256/256 / PMIC 33/33",
+        WHITE,
+    );
+    text(
+        c,
+        font,
+        60,
+        424,
+        1,
+        "Complete / Off: 17/17 / Restored: yes / 8kHz SGEN -18dBFS",
+        MINT,
+    );
+    text(
+        c,
+        font,
+        60,
+        456,
+        1,
+        "Tap [MODE: QWAVE] top-right for Full Qwave Browser.",
+        GOLD,
+    );
+    panel(c, 534, 122);
+    text(c, font, 60, 546, 1, "02 / DEMOSCENE SCRILLER", GOLD);
+    text(c, font, 432, 546, 1, "INTEGER WAVE BANNER", MINT);
+    for col in 0..64 {
+        paint_scriller_cell(c, font, 0, col);
+    }
+}
+
+/// Full interactive Qwave Sovereign Browser mode in AyeOS (`720 x 1640` display).
+pub fn paint_qwave_fullscreen(
+    c: &mut impl Canvas,
+    font: Glyph,
+    scroll_y: usize,
+    active_tab: usize,
+    active_row: usize,
+    active_key: u8,
+) {
+    paint_qwave_top_viewport(c, font, scroll_y, active_tab);
+    panel(c, 668, 308);
+    text(c, font, 60, 686, 1, "03 / SCREAMTRACKER S3M PATTERN", GOLD);
+    text(c, font, 414, 686, 1, "QWAVE AUDIO DECK", MINT);
+    text(
+        c,
+        font,
+        60,
+        710,
+        1,
+        "Pop-free 8kHz SGEN (125Hz*N, -18dBFS) + Dual AW87394 SmartPAs.",
+        MUTED,
+    );
+    paint_tracker_rows(c, font, active_row);
+    panel(c, 988, 344);
+    text(
+        c,
+        font,
+        60,
+        1002,
+        1,
+        "04 / 24-KEY PIANO & QWAVE QUICK-NAV DOCK",
+        MINT,
+    );
+    paint_keyboard(c, font, active_key);
+    text(
+        c,
+        font,
+        60,
+        1154,
+        1,
+        "Touch tabs/scroll or press Vol Up/Down to browse Qwave & play S3M.",
+        MINT,
+    );
+    paint_qwave_browser(c, font, scroll_y, active_tab);
+}
+
+/// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to the `[MODE: STUDIO/QWAVE]` toggle button.
+pub fn mode_toggle_at_point(x: u16, y: u16) -> bool {
+    let ux = x as usize;
+    let uy = y as usize;
+    (520..=680).contains(&ux) && (68..=102).contains(&uy)
+}
+
 /// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to a Qwave Browser tab `0..2`.
 pub fn tab_at_point(x: u16, y: u16) -> Option<usize> {
     let ux = x as usize;
     let uy = y as usize;
-    if !(1176..=1198).contains(&uy) {
-        return None;
+    if (1176..=1198).contains(&uy) {
+        for i in 0..3usize {
+            let tx = 60 + i * 180;
+            if (tx..tx + 172).contains(&ux) {
+                return Some(i);
+            }
+        }
     }
-    for i in 0..3usize {
-        let tx = 60 + i * 180;
-        if (tx..tx + 172).contains(&ux) {
-            return Some(i);
+    if (142..=174).contains(&uy) {
+        for i in 0..3usize {
+            let tx = 40 + i * 216;
+            if (tx..tx + 208).contains(&ux) {
+                return Some(i);
+            }
         }
     }
     None
@@ -436,14 +708,13 @@ pub fn tab_at_point(x: u16, y: u16) -> Option<usize> {
 pub fn scroll_at_point(x: u16, y: u16) -> Option<i16> {
     let ux = x as usize;
     let uy = y as usize;
-    if !(54..=666).contains(&ux) || !(1200..=1326).contains(&uy) {
-        return None;
+    if (54..=666).contains(&ux) && (1200..=1326).contains(&uy) {
+        return if uy < 1262 { Some(-1) } else { Some(1) };
     }
-    if uy < 1262 {
-        Some(-1)
-    } else {
-        Some(1)
+    if (40..=676).contains(&ux) && (186..=658).contains(&uy) {
+        return if uy < 418 { Some(-1) } else { Some(1) };
     }
+    None
 }
 
 pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {

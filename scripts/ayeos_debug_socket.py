@@ -45,7 +45,7 @@ QWAVE_STATE = {
 # ascending multipliers N = 1..14 (125 Hz, 250 Hz, 375 Hz, ..., 1750 Hz)!
 SEMITONE_TO_SGEN_MULT = (
     1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7,
-    8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 14, 14,
+    8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14,
 )
 
 TRACKER_ROW_SGEN = (
@@ -689,6 +689,7 @@ QWAVE_STUDIO_HTML = """<!DOCTYPE html>
       <div class="btn-bar">
         <button onclick="scrollQwave(-1)">SCROLL UP</button>
         <button onclick="scrollQwave(1)">SCROLL DOWN</button>
+        <button onclick="sendTouch(600, 84, 'MODE TOGGLE (QWAVE/STUDIO)')">MODE: QWAVE/STUDIO</button>
       </div>
     </div>
   </div>

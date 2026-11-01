@@ -479,7 +479,7 @@ fn preflight(b: &mut impl Bus, r: &mut Report) -> Result<()> {
     Ok(())
 }
 
-fn startup_route(b: &mut impl Bus, r: &mut Report) -> Result<()> {
+fn startup_route_core(b: &mut impl Bus, r: &mut Report, enable_pa: bool) -> Result<()> {
     r.phase = 1;
     // Silence and open the route before reset/profile writes.
     update(b, r, 0x22c0, 0xc0, 0x40)?;
@@ -507,7 +507,8 @@ fn startup_route(b: &mut impl Bus, r: &mut Report) -> Result<()> {
     for (reg, v) in [(0x229a, 6), (0x2296, 0xcba1), (0x229a, 3), (0x229a, 0xb)] {
         update(b, r, reg, 0xffff, v)?;
     }
-    update(b, r, 0x22c0, 0xff3f, 0)?;
+    // Set SGEN_AMP_DIV_CH1_CTL = 3 (0x3000, -18 dBFS digital headroom) so sine wave never clips
+    update(b, r, 0x22c0, 0xff3f, 0x3000)?;
     update(b, r, 0x22c2, 0xffff, 1)?;
     update(b, r, 0x2290, 1, 1)?; // DAC In Mux = Sgen (MT6358_AFE_TOP_CON0)
     update(b, r, 0x22c0, 0x80, 0x80)?; // enable, still muted
@@ -554,10 +555,17 @@ fn startup_route(b: &mut impl Bus, r: &mut Report) -> Result<()> {
             if addr == 0x59 && reg == 4 {
                 v = 0x2b;
             }
+            if reg == 2 && !enable_pa {
+                v = 0;
+            }
             pa(b, r, addr, reg, Some(v))?;
         }
     }
     delay(b, r, 30_000) // accommodates the documented ZCD 30ms timeout
+}
+
+fn startup_route(b: &mut impl Bus, r: &mut Report) -> Result<()> {
+    startup_route_core(b, r, true)
 }
 
 fn startup(b: &mut impl Bus, r: &mut Report) -> Result<()> {
@@ -722,28 +730,32 @@ pub fn play_steps(
     }
     b.arm(true);
     let result = (|| -> Result<()> {
-        startup_route(b, &mut r)?;
+        startup_route_core(b, &mut r, false)?;
         if r.count > EVENTS - 64 {
             r.count = 0;
         }
-        // Enable audio XO buffer, dual SDM (0xcfa1), HS/RCV (0x2414), and HPL/HPR (0x2408/0x240a)
-        // in addition to LOL (0x2416) so both top (0x59) and bottom (0x58) speakers receive signal.
+        // Set 0x2308 (AFE_PMIC_NEWIF_CFG3) bits 15:12 = 0 (8kHz downlink rate so SGEN base = 125Hz)
+        // and configure dual SDM (0xcfa1), HS/RCV (0x2414), and HPL/HPR (0x2408/0x240a) while PAs are OFF.
         for (reg, mask, v) in [
+            (0x2308, 0xf000, 0x0000),
             (0x239e, 0x0400, 0x0400),
             (0x2296, 0xffff, 0xcfa1),
             (0x2410, 0x0047, 0x0000),
             (0x240c, 0xffff, 0xc033),
             (0x2414, 0xffff, 0x0093),
-            (0x248e, 0x001f, 0x0000),
+            (0x248e, 0x001f, 0x0008),
             (0x2414, 0x000c, 0x0008),
-            (0x248c, 0x0f9f, 0x0000),
+            (0x248c, 0x0f9f, 0x060c),
+            (0x248a, 0x0f9f, 0x060c),
             (0x2408, 0x3fff, 0x3aff),
             (0x240a, 0x00ff, 0x0003),
         ] {
             update(b, &mut r, reg, mask, v)?;
         }
+        delay(b, &mut r, 5_000)?;
         r.phase = 2;
         r.opened = deadline(b, r.start)?;
+        let mut last_mask = 0u8;
         for (idx, step) in steps.iter().enumerate() {
             on_step(idx, step);
             if r.count > EVENTS - 96 {
@@ -758,9 +770,15 @@ pub fn play_steps(
             update(b, &mut r, 0x248a, 0x0f9f, gain)?;
             update(b, &mut r, 0x248c, 0x0f9f, gain)?;
             update(b, &mut r, 0x22c2, 0xffff, div)?;
-            for (bit, addr) in [(1u8, 0x58u8), (2u8, 0x59u8)] {
-                let sysctrl = if mask & bit != 0 { 0x3f } else { 0 };
-                pa(b, &mut r, addr, 2, Some(sysctrl))?;
+            if mask != last_mask {
+                for (bit, addr) in [(1u8, 0x58u8), (2u8, 0x59u8)] {
+                    let sysctrl = if mask & bit != 0 { 0x3f } else { 0 };
+                    pa(b, &mut r, addr, 2, Some(sysctrl))?;
+                }
+                if last_mask == 0 {
+                    delay(b, &mut r, 8_000)?;
+                }
+                last_mask = mask;
             }
             update(b, &mut r, 0x22c0, 0x40, 0)?;
             let dur_ticks = u64::from(step.duration_us.clamp(20_000, 1_500_000)) * 13;
@@ -781,14 +799,23 @@ pub fn play_steps(
             if !finished {
                 return Err(Error::Timer);
             }
+            update(b, &mut r, 0x22c0, 0x40, 0x40)?;
         }
         Ok(())
     })();
-    if r.count > EVENTS - 80 {
+    if r.count > EVENTS - 96 {
         r.count = 0;
     }
     r.error = result.err().map_or(0, |e| e as u32);
     r.phase = 3;
+    // Turn OFF both external AW87394 SmartPAs FIRST while analog outputs are still biased to prevent pop!
+    let _ = update(b, &mut r, 0x22c0, 0xc0, 0x40);
+    for addr in [0x58, 0x59] {
+        if pa(b, &mut r, addr, 2, Some(0)).is_err() {
+            r.cleanup_errors += 1;
+        }
+    }
+    let _ = delay(b, &mut r, 3_000);
     for (reg, mask, v) in [
         (0x240a, 0xffff, 0),
         (0x2408, 0xfff9, 0),
@@ -797,6 +824,7 @@ pub fn play_steps(
         (0x248c, 0xffff, 0x0f9f),
         (0x248e, 0x001f, 0x001f),
         (0x239e, 0x0400, 0),
+        (0x2308, 0xf000, 0xf000),
     ] {
         if update(b, &mut r, reg, mask, v).is_err() {
             r.cleanup_errors += 1;
@@ -825,6 +853,10 @@ pub fn debug_synth_start(b: &mut impl Bus, div: u16, gain_reg: u16, spk_mask: u8
     r.start = b.ticks().unwrap_or(0);
     // Clean any previously active route first so we can re-open cleanly
     r.phase = 3;
+    let _ = update(b, &mut r, 0x22c0, 0xc0, 0x40);
+    for addr in [0x58, 0x59] {
+        let _ = pa(b, &mut r, addr, 2, Some(0));
+    }
     for (reg, mask, v) in [
         (0x240a, 0xffff, 0),
         (0x2408, 0xfff9, 0),
@@ -833,6 +865,7 @@ pub fn debug_synth_start(b: &mut impl Bus, div: u16, gain_reg: u16, spk_mask: u8
         (0x248c, 0xffff, 0x0f9f),
         (0x248e, 0x001f, 0x001f),
         (0x239e, 0x0400, 0),
+        (0x2308, 0xf000, 0xf000),
     ] {
         let _ = update(b, &mut r, reg, mask, v);
     }
@@ -847,30 +880,33 @@ pub fn debug_synth_start(b: &mut impl Bus, div: u16, gain_reg: u16, spk_mask: u8
     }
     b.arm(true);
     let res = (|| -> Result<()> {
-        startup_route(b, &mut r)?;
+        startup_route_core(b, &mut r, false)?;
         if r.count > EVENTS - 64 {
             r.count = 0;
         }
         for (reg, mask, v) in [
+            (0x2308, 0xf000, 0x0000),
             (0x239e, 0x0400, 0x0400),
             (0x2296, 0xffff, 0xcfa1),
             (0x2410, 0x0047, 0x0000),
             (0x240c, 0xffff, 0xc033),
             (0x2414, 0xffff, 0x0093),
-            (0x248e, 0x001f, 0x0000),
+            (0x248e, 0x001f, 0x0008),
             (0x2414, 0x000c, 0x0008),
             (0x248c, 0x0f9f, gain_reg & 0x0f9f),
             (0x248a, 0x0f9f, gain_reg & 0x0f9f),
             (0x2408, 0x3fff, 0x3aff),
             (0x240a, 0x00ff, 0x0003),
-            (0x22c2, 0xffff, div.clamp(1, 31)),
+            (0x22c2, 0xffff, (div & 0x0f).clamp(1, 15)),
         ] {
             update(b, &mut r, reg, mask, v)?;
         }
+        delay(b, &mut r, 5_000)?;
         let mask = if spk_mask & 3 == 0 { 3 } else { spk_mask & 3 };
         for (bit, addr) in [(1u8, 0x58u8), (2u8, 0x59u8)] {
             pa(b, &mut r, addr, 2, Some(if mask & bit != 0 { 0x3f } else { 0 }))?;
         }
+        delay(b, &mut r, 8_000)?;
         r.phase = 2;
         r.opened = b.ticks()?;
         update(b, &mut r, 0x22c0, 0x40, 0)?;
@@ -893,6 +929,13 @@ pub fn debug_synth_stop(b: &mut impl Bus) -> Report {
     r.frequency = b.frequency();
     r.start = b.ticks().unwrap_or(0);
     r.phase = 3;
+    let _ = update(b, &mut r, 0x22c0, 0xc0, 0x40);
+    for addr in [0x58, 0x59] {
+        if pa(b, &mut r, addr, 2, Some(0)).is_err() {
+            r.cleanup_errors += 1;
+        }
+    }
+    let _ = delay(b, &mut r, 3_000);
     for (reg, mask, v) in [
         (0x240a, 0xffff, 0),
         (0x2408, 0xfff9, 0),
@@ -901,6 +944,7 @@ pub fn debug_synth_stop(b: &mut impl Bus) -> Report {
         (0x248c, 0xffff, 0x0f9f),
         (0x248e, 0x001f, 0x001f),
         (0x239e, 0x0400, 0),
+        (0x2308, 0xf000, 0xf000),
     ] {
         if update(b, &mut r, reg, mask, v).is_err() {
             r.cleanup_errors += 1;
