@@ -63,11 +63,19 @@ fn alpha_selftests(base: usize, stride: usize) -> (u32, u32, u64, u64) {
         env!("AYEOS_BUILD_DIRTY")
     );
     board_line(base, stride, 74, line.text());
+    #[cfg(not(feature = "tone-report"))]
     board_line(
         base,
         stride,
         75,
         "Marine input=fixture. PCM/capture/Phoenix/tone are not active.",
+    );
+    #[cfg(feature = "tone-report")]
+    board_line(
+        base,
+        stride,
+        75,
+        "Marine input=fixture. SGEN attempt follows; live PCM/Phoenix inactive.",
     );
     (passed, failed, hash, samples as u64)
 }
@@ -112,6 +120,8 @@ fn alpha_panic(info: &PanicInfo<'_>) -> ! {
 #[no_mangle]
 extern "C" fn ayeos_fatal_halt() -> ! {
     use core::fmt::Write;
+    #[cfg(feature = "tone-report")]
+    tone_fatal_cleanup();
     let (base, stride) = unsafe { read_volatile(core::ptr::addr_of!(ALPHA_FRAMEBUFFER)) };
     if base != 0 {
         // No peripheral probe, watchdog access, USB restart or format allocation.
@@ -153,6 +163,15 @@ extern "C" fn ayeos_fatal_halt() -> ! {
             file, row, column
         );
         show(5, line.text());
+        #[cfg(feature = "tone-report")]
+        show(
+            7,
+            if unsafe { read_volatile(core::ptr::addr_of!(TONE_FATAL_OFF)) } {
+                "Emergency stop: Off predicates verified; fatal snapshot is screen-only."
+            } else {
+                "Emergency Off NOT verified. If sounding, use physical power-off."
+            },
+        );
         show(
             6,
             "RAM evidence only; no automatic repair or reboot. USB halted.",

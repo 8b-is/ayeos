@@ -112,11 +112,29 @@ extern "C" fn ayeos_fatal_halt() -> ! {
     unsafe {
         let f = read_volatile(core::ptr::addr_of!(ALPHA_FAULT));
         let expected_ec = if cfg!(fatal_load) { 0x25 } else { 0x3c };
+        #[cfg(fatal_cleanup)]
+        {
+            // Tone's emergency attempt reopens exact-MMIO recovery after recording
+            // a fatal fault. Prove re-entry preserves that original record.
+            write_volatile(core::ptr::addr_of_mut!(AYEOS_IN_EXCEPTION), 0);
+            safe_mmio_read8(0);
+            safe_mmio_read16(0);
+            safe_mmio_read32(0);
+            safe_mmio_write8(0, 0);
+            safe_mmio_write16(0, 0);
+            safe_mmio_write32(0, 0);
+            let after = read_volatile(core::ptr::addr_of!(ALPHA_FAULT));
+            if after.pc != f.pc || after.esr != f.esr || after.action != 3 {
+                exit(false);
+            }
+            write_volatile(core::ptr::addr_of_mut!(AYEOS_IN_EXCEPTION), 1);
+        }
         exit(
             read_volatile(core::ptr::addr_of!(EXPECT_FATAL))
                 && f.action == 3
                 && f.esr >> 26 == expected_ec
-                && read_volatile(core::ptr::addr_of!(AYEOS_FAULT_COUNT)) == 7,
+                && read_volatile(core::ptr::addr_of!(AYEOS_FAULT_COUNT))
+                    == if cfg!(fatal_cleanup) { 13 } else { 7 },
         );
     }
 }

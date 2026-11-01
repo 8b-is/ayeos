@@ -1,6 +1,7 @@
 # ayeOS · 0.2.0
 
-Phone development: [audio alpha1 — instrumented foundation](docs/AUDIO_ALPHA1.md)
+Phone development: [audio tone1 — bounded SGEN / Off evidence](docs/AUDIO_TONE1.md),
+[audio alpha1 — instrumented foundation](docs/AUDIO_ALPHA1.md)
 (bare-metal diagnostics and real Marine reference self-test; handset validation pending).
 
 **Ternary matrix inference daemon. Part of the 8b-is mesh.**

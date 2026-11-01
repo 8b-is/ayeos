@@ -5,8 +5,10 @@ use crate::board_pages::crc32;
 pub const VID: u16 = 0x18d1; // inherited experimental identity, not an allocated AyeOS VID
 pub const PID: u16 = 0x4ee0;
 pub const CHUNK: usize = 48;
-#[cfg(feature = "alpha-report")]
+#[cfg(all(feature = "alpha-report", not(feature = "tone-report")))]
 const RELEASE: u8 = 0x61;
+#[cfg(feature = "tone-report")]
+const RELEASE: u8 = 0x62;
 #[cfg(all(feature = "board6-report", not(feature = "alpha-report")))]
 const RELEASE: u8 = 0x46;
 #[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
@@ -63,6 +65,10 @@ pub struct Control<'a> {
     diagnostics: &'a [u8],
     #[cfg(feature = "alpha-report")]
     diagnostics_crc: u32,
+    #[cfg(feature = "tone-report")]
+    tone: &'a [u8],
+    #[cfg(feature = "tone-report")]
+    tone_crc: u32,
 }
 impl<'a> Control<'a> {
     pub fn new(blob: &'a [u8]) -> Self {
@@ -81,6 +87,10 @@ impl<'a> Control<'a> {
             diagnostics: &[],
             #[cfg(feature = "alpha-report")]
             diagnostics_crc: 0,
+            #[cfg(feature = "tone-report")]
+            tone: &[],
+            #[cfg(feature = "tone-report")]
+            tone_crc: 0,
         }
     }
     #[cfg(feature = "audio-report")]
@@ -92,6 +102,11 @@ impl<'a> Control<'a> {
     pub fn set_diagnostics(&mut self, report: &'a [u8]) {
         self.diagnostics = report;
         self.diagnostics_crc = crc32(report);
+    }
+    #[cfg(feature = "tone-report")]
+    pub fn set_tone(&mut self, report: &'a [u8]) {
+        self.tone = report;
+        self.tone_crc = crc32(report);
     }
     pub fn reset(&mut self) {
         self.address = 0;
@@ -244,6 +259,40 @@ impl<'a> Control<'a> {
                 }
                 let data = &self.diagnostics[offset..(offset + CHUNK).min(self.diagnostics.len())];
                 out[..4].copy_from_slice(b"ADCH");
+                out[4..8].copy_from_slice(&(offset as u32).to_le_bytes());
+                out[8..10].copy_from_slice(&(data.len() as u16).to_le_bytes());
+                out[10..12].copy_from_slice(&1u16.to_le_bytes());
+                out[12..16].copy_from_slice(&crc32(data).to_le_bytes());
+                out[16..16 + data.len()].copy_from_slice(data);
+                Reply::Data(64)
+            }
+            #[cfg(feature = "tone-report")]
+            (0xc0, 0xb6)
+                if value == 0
+                    && index == 0
+                    && length == 64
+                    && self.configuration == 1
+                    && !self.tone.is_empty() =>
+            {
+                out[..4].copy_from_slice(b"ATIF");
+                out[4..8].copy_from_slice(&1u32.to_le_bytes());
+                out[8..12].copy_from_slice(&(self.tone.len() as u32).to_le_bytes());
+                out[12..16].copy_from_slice(&self.tone_crc.to_le_bytes());
+                out[16..20].copy_from_slice(&(CHUNK as u32).to_le_bytes());
+                out[20..32].copy_from_slice(b"audio-tone1\0");
+                Reply::Data(64)
+            }
+            #[cfg(feature = "tone-report")]
+            (0xc0, 0xb7) if length == 64 && self.configuration == 1 => {
+                let number = u32::from(value) | (u32::from(index) << 16);
+                let Some(offset) = (number as usize).checked_mul(CHUNK) else {
+                    return Reply::Stall;
+                };
+                if offset >= self.tone.len() {
+                    return Reply::Stall;
+                }
+                let data = &self.tone[offset..(offset + CHUNK).min(self.tone.len())];
+                out[..4].copy_from_slice(b"ATCH");
                 out[4..8].copy_from_slice(&(offset as u32).to_le_bytes());
                 out[8..10].copy_from_slice(&(data.len() as u16).to_le_bytes());
                 out[10..12].copy_from_slice(&1u16.to_le_bytes());

@@ -79,8 +79,8 @@ def decode(data):
                 crc32=f"{zlib.crc32(data):08x}", sha256=hashlib.sha256(data).hexdigest())
 
 
-def capture(usb, save=None):
-    if (usb.read(0x80, 6, 0x0100, length=18) != DEVICE or
+def capture(usb, save=None, expected_device=DEVICE):
+    if (usb.read(0x80, 6, 0x0100, length=18) != expected_device or
             usb.read(0x80, 6, 0x0200, length=18) != b4.CONFIG or
             usb.read(0x80, 8, length=1) != b"\x01"):
         raise ValueError("not the exact configured alpha1 device")
@@ -106,7 +106,7 @@ def capture(usb, save=None):
     if usb.read(0xc0, 0xb4) != info or zlib.crc32(data) != struct.unpack_from("<I", info, 12)[0]:
         raise ValueError("alpha report changed or whole-file CRC failed")
     report = decode(data)
-    board_data, board = b6.capture(usb, expected_device=DEVICE)
+    board_data, board = b6.capture(usb, expected_device=expected_device)
     if save:
         save("board6-report.bin", board_data)
     if board["crc32"] != report["board6_crc32"]:

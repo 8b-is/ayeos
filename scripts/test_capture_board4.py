@@ -146,7 +146,7 @@ class CaptureTests(unittest.TestCase):
     def test_packaging_identity_roundtrip_padding_and_rejection(self):
         raw = bytearray(5000)
         raw[56:60] = b"ARM\x64"
-        for board in ("board3", "board4", "board5", "board6", "audio-alpha1"):
+        for board in ("board3", "board4", "board5", "board6", "audio-alpha1", "audio-tone1"):
             image = package_bringup.package(raw, board)
             self.assertEqual(image, package_bringup.package(raw, board))
             self.assertEqual(image[:8], b"ANDROID!")
@@ -157,6 +157,9 @@ class CaptureTests(unittest.TestCase):
             if board == "audio-alpha1":
                 self.assertIn(b"v5.6.0-studio-audio-alpha1", image[:4096])
                 self.assertIn(b"ayeos.alpha_report=1", image[:4096])
+            if board == "audio-tone1":
+                self.assertIn(b"v5.6.0-studio-audio-tone1", image[:4096])
+                self.assertIn(b"ayeos.tone_report=1", image[:4096])
             size = struct.unpack_from("<I", image, 8)[0]
             self.assertEqual(gzip.decompress(image[4096:4096 + size]), raw)
             self.assertFalse(any(image[4096 + size:]))
