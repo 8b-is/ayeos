@@ -14,7 +14,7 @@ import struct
 
 
 def package(kernel, board="board3"):
-    if board not in ("board3", "board4", "board5"):
+    if board not in ("board3", "board4", "board5", "board6"):
         raise ValueError("unknown diagnostic identity")
     if not 64 <= len(kernel) <= 4 * 1024 * 1024 or kernel[56:60] != b"ARM\x64":
         raise ValueError("expected a raw ARM64 boot kernel, not an ELF or gzip file")
@@ -26,9 +26,9 @@ def package(kernel, board="board3"):
     struct.pack_into("<I", header, 20, 1580)
     struct.pack_into("<I", header, 40, 4)
     cmdline = f"ayeos.baremetal=v5.4.0-studio-{board} ayeos.board_report=1".encode()
-    if board in ("board4", "board5"):
+    if board in ("board4", "board5", "board6"):
         cmdline += b" ayeos.usb_report=1"
-    if board == "board5":
+    if board in ("board5", "board6"):
         cmdline += b" ayeos.audio_report=1"
     cmdline += b"\0"
     header[44:44 + len(cmdline)] = cmdline
@@ -39,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--board", choices=("board3", "board4", "board5"), default="board3")
+    parser.add_argument("--board", choices=("board3", "board4", "board5", "board6"), default="board3")
     args = parser.parse_args()
     with args.kernel.open("rb") as f:
         kernel = f.read(4 * 1024 * 1024 + 1)

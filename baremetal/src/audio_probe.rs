@@ -78,13 +78,24 @@ impl Report {
 /// Requires a configured, idle LK bus. Does not retune shared parent clocks,
 /// configure GPIOs, enable DMA, write amplifier values or touch charger addresses.
 pub fn run(io: &mut impl Io, blob: &[u8]) -> Report {
+    run_inner(io, blob, &mut [])
+}
+
+/// Board6 fixed window, one combined byte read per register, same restoration.
+/// Caller initializes 256 five-word entries to NotRun + unobserved values.
+pub fn run_window(io: &mut impl Io, blob: &[u8], window: &mut [u32]) -> Report {
+    assert_eq!(window.len(), 256 * 5);
+    run_inner(io, blob, window)
+}
+
+fn run_inner(io: &mut impl Io, blob: &[u8], window: &mut [u32]) -> Report {
     let mut r = Report::new(blob);
     if !audio_board::matches(blob).unwrap_or(false) {
         r.words[4] = Status::FdtMismatch as u32;
         return r;
     }
     r.words[5] = 1;
-    let status = probe(io, &mut r);
+    let status = probe(io, &mut r, window);
     r.words[4] = if io.faulted() {
         Status::Fault as u32
     } else {
@@ -93,7 +104,7 @@ pub fn run(io: &mut impl Io, blob: &[u8]) -> Report {
     r
 }
 
-fn probe(io: &mut impl Io, r: &mut Report) -> Status {
+fn probe(io: &mut impl Io, r: &mut Report, window: &mut [u32]) -> Status {
     for (i, address) in [TOP, INFRA, PIN].into_iter().enumerate() {
         let value = io.read32(address);
         if io.faulted() {
@@ -138,20 +149,34 @@ fn probe(io: &mut impl Io, r: &mut Report) -> Status {
         return Status::Config;
     }
     let mut result = Status::Complete;
-    for (i, address) in [0x58u16, 0x59].into_iter().enumerate() {
+    'addresses: for (i, address) in [0x58u16, 0x59].into_iter().enumerate() {
         let at = 32 + i * 5;
-        let status = read_id(io, address, &mut r.words[at..at + 5]);
-        r.words[at] = if io.faulted() {
-            Status::Fault as u32
-        } else {
-            status as u32
-        };
-        if io.faulted() {
-            return Status::Fault;
-        }
-        if status != Status::Complete {
-            result = status;
-            break;
+        let count = if window.is_empty() { 1 } else { 128 };
+        for register in 0..count {
+            if !window.is_empty() {
+                io.keepalive();
+            }
+            let mut entry = [u32::MAX; 5];
+            let status = read_register(io, address, register as u8, &mut entry);
+            entry[0] = if io.faulted() {
+                Status::Fault as u32
+            } else {
+                status as u32
+            };
+            if register == 0 {
+                r.words[at..at + 5].copy_from_slice(&entry);
+            }
+            if !window.is_empty() {
+                let start = (i * 128 + register) * 5;
+                window[start..start + 5].copy_from_slice(&entry);
+            }
+            if io.faulted() {
+                return Status::Fault;
+            }
+            if status != Status::Complete {
+                result = status;
+                break 'addresses;
+            }
         }
     }
     // A failed transfer is reset before restoring saved configuration. No bus
@@ -199,7 +224,7 @@ fn probe(io: &mut impl Io, r: &mut Report) -> Status {
     }
 }
 
-fn read_id(io: &mut impl Io, address: u16, out: &mut [u32]) -> Status {
+fn read_register(io: &mut impl Io, address: u16, register: u8, out: &mut [u32]) -> Status {
     io.write16(BASE + 8, 0); // polled status, no interrupt delivery
     io.write16(BASE + 0x10, 0xba); // ACKERR, stretch, IRQ_SEL, direction change, RS; no DMA
     io.write16(BASE + 4, address << 1);
@@ -211,7 +236,7 @@ fn read_id(io: &mut impl Io, address: u16, out: &mut [u32]) -> Status {
     io.write16(BASE + 0x14, 1);
     io.write16(BASE + 0x44, 1);
     io.write16(BASE + 0x18, 2);
-    io.write8(BASE, 0); // AW_DEV_REG_CHIPID address only; no register-value write
+    io.write8(BASE, register); // register address only; no register-value write
     io.write16(BASE + 0x24, 1);
     for polls in 1..=BUDGET {
         let irq = io.read16(BASE + 0xc);

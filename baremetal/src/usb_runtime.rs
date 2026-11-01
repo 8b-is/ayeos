@@ -79,6 +79,9 @@ impl usb_control::Io for UsbIo {
             }
         }
     }
+    fn keepalive(&mut self) {
+        self.write32(MTK_WDT_RESTART, 0x1971);
+    }
 }
 
 #[cfg(feature = "usb-report")]
@@ -88,8 +91,10 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
     clear_board_page(base, stride);
     #[cfg(not(feature = "audio-report"))]
     let banner = "AYEOS studio-board4-r3 / USB EP0 READBACK (not CDC serial)";
-    #[cfg(feature = "audio-report")]
+    #[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
     let banner = "AYEOS studio-board5-r2 / SmartPA ID probe + USB EP0";
+    #[cfg(feature = "board6-report")]
+    let banner = "AYEOS studio-board6 / inherited PA windows + MT6358 readback";
     board_line(base, stride, 0, banner);
     board_line(
         base,
@@ -172,11 +177,14 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     "Stage: bounded clock/PHY init; rails and PLL parents inherited from LK",
                 );
                 // Draw the fallback BEFORE attempting controller attachment.
-                let mut row = 18;
-                usb_board::summary(blob, |s| {
-                    board_line(base, stride, row, s);
-                    row += 1;
-                });
+                #[cfg(not(feature = "board6-report"))]
+                {
+                    let mut row = 18;
+                    usb_board::summary(blob, |s| {
+                        board_line(base, stride, row, s);
+                        row += 1;
+                    });
+                }
                 board_line(
                     base,
                     stride,
@@ -190,12 +198,19 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     70,
                     "Expected ID 18d1:4ee0 bcd0544; use capture_board4.py, not an OTA daemon",
                 );
-                #[cfg(feature = "audio-report")]
+                #[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
                 board_line(
                     base,
                     stride,
                     70,
                     "ID 18d1:4ee0 bcd0545; capture_board5.py; no tone/profile enabled",
+                );
+                #[cfg(feature = "board6-report")]
+                board_line(
+                    base,
+                    stride,
+                    70,
+                    "ID 18d1:4ee0 bcd0546; capture_board6.py; inherited state, not POR",
                 );
                 board_line(
                     base,
@@ -204,7 +219,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     "~ marks shortened fallback fields; the requested USB dump is complete.",
                 );
                 flush_dcache_range(base, stride * SCREEN_H * 4);
-                #[cfg(feature = "audio-report")]
+                #[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
                 let report_bytes = {
                     board_line(
                         base,
@@ -238,6 +253,87 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     board_line(base, stride, 16, line.text());
                     report.encode()
                 };
+                #[cfg(feature = "board6-report")]
+                let report_bytes = {
+                    board_line(
+                        base,
+                        stride,
+                        14,
+                        "Board6: I2C4 2x128 byte reads, then inherited PWRAP; bounded, pre-USB",
+                    );
+                    flush_dcache_range(base, stride * SCREEN_H * 4);
+                    let mut probe_io = UsbIo {
+                        start_faults: fault_count(),
+                    };
+                    let report = board6::run(&mut probe_io, blob);
+                    let w = &report.words;
+                    let mut line = board_screen::Line::new();
+                    let done = w[board6::AMP..board6::PMIC]
+                        .chunks_exact(5)
+                        .filter(|e| e[0] == 1)
+                        .count();
+                    let _ = write!(
+                        line,
+                        "A6 I2C status={} reads={}/256 restored={} PA58={:02x} PA59={:02x}",
+                        w[20], done, w[58], w[49], w[54]
+                    );
+                    board_line(base, stride, 15, line.text());
+                    let mut line = board_screen::Line::new();
+                    let _ = write!(
+                        line,
+                        "PWRAP status={} idle={} test={:04x} HWCID={:04x} SWCID={:04x}",
+                        w[1344], w[1347], w[1377], w[1382], w[1387]
+                    );
+                    board_line(base, stride, 16, line.text());
+                    board_line(
+                        base,
+                        stride,
+                        17,
+                        "ffffffff = unobserved; status1=complete. No tone/profile loaded.",
+                    );
+                    // Full byte window fits on this fixed fallback page. '--' is
+                    // not a zero: it means the read did not complete.
+                    for chip in 0..2 {
+                        for group in 0..16 {
+                            let mut line = board_screen::Line::new();
+                            let _ = write!(line, "PA{:02x} {:02x}:", 0x58 + chip, group * 8);
+                            for reg in group * 8..group * 8 + 8 {
+                                let e = board6::AMP + (chip * 128 + reg) * 5;
+                                if w[e] == 1 {
+                                    let _ = write!(line, " {:02x}", w[e + 1]);
+                                } else {
+                                    let _ = write!(line, " --");
+                                }
+                            }
+                            board_line(base, stride, 18 + chip * 16 + group, line.text());
+                        }
+                    }
+                    for group in 0..17 {
+                        let mut line = board_screen::Line::new();
+                        for i in group * 2..(group * 2 + 2).min(pmic_probe::REGISTERS.len()) {
+                            let e = board6::READS + i * 5;
+                            let _ = write!(
+                                line,
+                                " P{:04x}={:08x}/s{}",
+                                pmic_probe::REGISTERS[i],
+                                w[e + 1],
+                                w[e]
+                            );
+                        }
+                        board_line(base, stride, 50 + group, line.text());
+                    }
+                    let encoded = report.encode();
+                    let mut line = board_screen::Line::new();
+                    let _ = write!(
+                        line,
+                        "WACS2 before={:08x} after={:08x}; report CRC={:08x}",
+                        w[1356],
+                        w[1359],
+                        board_pages::crc32(&encoded)
+                    );
+                    board_line(base, stride, 67, line.text());
+                    encoded
+                };
                 #[cfg(not(feature = "audio-report"))]
                 let usb_fault_baseline = initial_faults;
                 #[cfg(feature = "audio-report")]
@@ -250,6 +346,9 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 let mut device = usb_control::Device::new(blob); // CRC computed before attach
                 #[cfg(feature = "audio-report")]
                 device.control.set_report(&report_bytes);
+                // Commit the completed fallback before potentially faulting in USB init.
+                #[cfg(feature = "board6-report")]
+                flush_dcache_range(base, stride * SCREEN_H * 4);
                 let mut init = usb_phy::initialize(&mut io, board.ready());
                 let mut line = board_screen::Line::new();
                 let _ = write!(line, "INIT={:?} skipped faults={}", init, fault_count());

@@ -5,10 +5,16 @@ use crate::board_pages::crc32;
 pub const VID: u16 = 0x18d1; // inherited experimental identity, not an allocated AyeOS VID
 pub const PID: u16 = 0x4ee0;
 pub const CHUNK: usize = 48;
-#[cfg(feature = "audio-report")]
+#[cfg(feature = "board6-report")]
+const RELEASE: u8 = 0x46;
+#[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
 const RELEASE: u8 = 0x45;
 #[cfg(not(feature = "audio-report"))]
 const RELEASE: u8 = 0x44;
+#[cfg(feature = "board6-report")]
+const REPORT_ID: (&[u8; 4], &[u8; 4], &[u8; 12]) = (b"A6IF", b"A6CH", b"board6-aud\0\0");
+#[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
+const REPORT_ID: (&[u8; 4], &[u8; 4], &[u8; 12]) = (b"A5IF", b"A5CH", b"board5-aud\0\0");
 pub const DEVICE: [u8; 18] = [
     18,
     1,
@@ -170,12 +176,12 @@ impl<'a> Control<'a> {
                     && self.configuration == 1
                     && !self.report.is_empty() =>
             {
-                out[..4].copy_from_slice(b"A5IF");
+                out[..4].copy_from_slice(REPORT_ID.0);
                 out[4..8].copy_from_slice(&1u32.to_le_bytes());
                 out[8..12].copy_from_slice(&(self.report.len() as u32).to_le_bytes());
                 out[12..16].copy_from_slice(&self.report_crc.to_le_bytes());
                 out[16..20].copy_from_slice(&(CHUNK as u32).to_le_bytes());
-                out[20..32].copy_from_slice(b"board5-aud\0\0");
+                out[20..32].copy_from_slice(REPORT_ID.2);
                 Reply::Data(64)
             }
             #[cfg(feature = "audio-report")]
@@ -188,7 +194,7 @@ impl<'a> Control<'a> {
                     return Reply::Stall;
                 }
                 let data = &self.report[offset..(offset + CHUNK).min(self.report.len())];
-                out[..4].copy_from_slice(b"A5CH");
+                out[..4].copy_from_slice(REPORT_ID.1);
                 out[4..8].copy_from_slice(&(offset as u32).to_le_bytes());
                 out[8..10].copy_from_slice(&(data.len() as u16).to_le_bytes());
                 out[10..12].copy_from_slice(&1u16.to_le_bytes());
@@ -212,6 +218,8 @@ pub trait Io {
     fn write32(&mut self, address: usize, value: u32);
     fn faulted(&self) -> bool;
     fn settle(&mut self);
+    /// Bounded pre-USB diagnostics may feed the already-running watchdog.
+    fn keepalive(&mut self) {}
 }
 
 /// MediaTek USB20 interrupt status is W1C, not read-to-clear. Acknowledge

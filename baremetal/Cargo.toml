@@ -8,6 +8,7 @@ description = "100% Bare-Metal #![no_std] #![no_main] Rust Kernel for BLU G75 (M
 board-report = []
 usb-report = ["board-report"]
 audio-report = ["usb-report"]
+board6-report = ["audio-report"]
 
 [profile.release]
 opt-level = 2

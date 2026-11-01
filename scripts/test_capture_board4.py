@@ -146,7 +146,7 @@ class CaptureTests(unittest.TestCase):
     def test_packaging_identity_roundtrip_padding_and_rejection(self):
         raw = bytearray(5000)
         raw[56:60] = b"ARM\x64"
-        for board in ("board3", "board4"):
+        for board in ("board3", "board4", "board5", "board6"):
             image = package_bringup.package(raw, board)
             self.assertEqual(image, package_bringup.package(raw, board))
             self.assertEqual(image[:8], b"ANDROID!")

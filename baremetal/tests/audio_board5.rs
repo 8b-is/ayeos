@@ -3,12 +3,21 @@
 mod audio_board;
 #[path = "../src/audio_probe.rs"]
 mod audio_probe;
+#[cfg(feature = "board6-report")]
+#[path = "../src/board6.rs"]
+mod board6;
+#[cfg(feature = "board6-report")]
+#[path = "board6_cases.rs"]
+mod board6_cases;
 #[path = "../src/board_pages.rs"]
 mod board_pages;
 #[path = "../src/board_screen.rs"]
 mod board_screen;
 #[path = "../src/device_tree.rs"]
 mod device_tree;
+#[cfg(feature = "board6-report")]
+#[path = "../src/pmic_probe.rs"]
+mod pmic_probe;
 #[path = "../src/usb_control.rs"]
 mod usb_control;
 use audio_probe::{Status, BASE, INFRA, PIN, TOP};
@@ -157,6 +166,21 @@ fn fixture(change: u8) -> Vec<u8> {
         f.begin("duplicate");
         f.cells("phandle", &[42]);
         f.end();
+    }
+    #[cfg(feature = "board6-report")]
+    {
+        for _ in 0..if change == 7 { 2 } else { 1 } {
+            f.begin("pwrap@1000d000");
+            f.prop("compatible", b"mediatek,mt6768-pwrap\0");
+            f.cells("reg", &[0, 0x1000d000, 0, 0x1000]);
+            if change == 8 {
+                f.prop("status", b"disabled\0");
+            }
+            f.begin("mt6358-pmic");
+            f.prop("compatible", b"mediatek,mt6358\0");
+            f.end();
+            f.end();
+        }
     }
     f.end();
     f.finish()
@@ -442,6 +466,7 @@ fn setup(kind: u8, request: u8, value: u16, length: u16) -> [u8; 8] {
     [kind, request, v[0], v[1], 0, 0, n[0], n[1]]
 }
 #[test]
+#[cfg(not(feature = "board6-report"))]
 fn report_transport_is_configured_read_only_bounded_and_reset_stable() {
     let blob = fixture(0);
     let report = audio_probe::run(&mut Mock::ready(), &blob).encode();
@@ -492,4 +517,6 @@ fn live_fdt_matches_without_embedding_private_data() {
     let path = std::env::var("BOARD5_PRIVATE_FDT").unwrap();
     let b = std::fs::read(path).unwrap();
     assert!(audio_board::matches(&b).unwrap());
+    #[cfg(feature = "board6-report")]
+    assert!(pmic_probe::matches(&b).unwrap());
 }
