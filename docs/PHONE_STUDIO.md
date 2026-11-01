@@ -106,6 +106,16 @@ the single tone attempt happens before USB enumeration. Building does not flash.
 
 Return complete original captures, exact image/flash logs and a screen photo
 privately, plus whether sound was audible, which speakers sounded, any pops, and
-whether sound stopped. Use the offline reviewer with the exact expected revision;
+whether sound stopped. Use the [offline reviewer](REVIEW_TONE.md) with the exact expected revision;
 register acceptance and the human acoustic observation remain different results.
+
+```sh
+python3 review_tone.py PRIVATE_CAPTURE_DIR --expected-revision FULL_IMAGE_REVISION
+```
+
+The reviewer re-decodes raw reports, checks crosslinks and the original capture
+manifest, and rejects contradictory or partial evidence. The tightened Tone1
+decoder requires the real successful journal sequence, not just final Off bits.
+It deliberately preserves legitimate failure journals. Both success and failure
+remain available for diagnosis; neither is a claim of physical audibility.
 Continue live PCM / Marine input / Phoenix only after reviewing that evidence.

@@ -199,12 +199,66 @@ fn solid(_: u8) -> [u8; 16] {
 }
 
 #[test]
+fn red_alarm_renders_and_live_cell_geometry_is_isolated() {
+    struct Frame(Vec<u32>);
+    impl dashboard::Canvas for Frame {
+        fn pixel(&mut self, x: usize, y: usize, color: u32) {
+            self.0[y * dashboard::WIDTH + x] = color;
+        }
+    }
+    let mut t = complete();
+    t.outcome = 4;
+    t.off &= !1;
+    let mut v = sample(&t);
+    v.dirty = true;
+    v.failed = 7;
+    let mut frame = Frame(vec![0; dashboard::WIDTH * dashboard::HEIGHT]);
+    phone_studio::paint(&mut frame, solid, &v);
+    assert_eq!(frame.0[346 * dashboard::WIDTH + 60], 0xffff9d9d);
+    assert_eq!(frame.0[1154 * dashboard::WIDTH + 60], 0xffff9d9d);
+    let original = frame.0.clone();
+    // Same 9x16 opaque-cell geometry as the existing production status updater;
+    // this is a composition check, not a simulation of USB polling latency.
+    for column in 0..76 {
+        dashboard::rect(
+            &mut frame,
+            20 + column * 9,
+            phone_studio::USB_STATUS_Y,
+            9,
+            16,
+            dashboard::INK,
+        );
+        dashboard::text(
+            &mut frame,
+            solid,
+            20 + column * 9,
+            phone_studio::USB_STATUS_Y,
+            1,
+            "X",
+            dashboard::MINT,
+        );
+    }
+    for (index, (old, new)) in original.iter().zip(&frame.0).enumerate() {
+        let x = index % dashboard::WIDTH;
+        let y = index / dashboard::WIDTH;
+        if !(20..704).contains(&x)
+            || !(phone_studio::USB_STATUS_Y..phone_studio::USB_STATUS_Y + 16).contains(&y)
+        {
+            assert_eq!(old, new, "live strip changed outside pixel {x},{y}");
+        }
+    }
+}
+
+#[test]
 fn every_state_and_extreme_counter_fits_the_framebuffer() {
     for outcome in [0, 1, 2, 3, 4, u32::MAX] {
         for error in 0..=13 {
             let mut t = complete();
             t.outcome = outcome;
             t.error = error;
+            if outcome == 4 {
+                t.off &= !1;
+            }
             phone_studio::paint(&mut Bounds, solid, &sample(&t));
         }
     }

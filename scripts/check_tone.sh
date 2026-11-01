@@ -7,6 +7,8 @@ rustc --edition=2021 -O --test --cfg 'feature="audio-report"' \
     --cfg 'feature="tone-report"' baremetal/tests/tone.rs -o "$output/tone-tests"
 "$output/tone-tests"
 python3 -m unittest discover -s scripts -p 'test_capture_tone.py' -v
+# Keep the real Rust wire fixture in scope for offline acceptance checks too.
+python3 -m unittest discover -s scripts -p 'test_review_tone.py' -v
 rustc --edition=2021 --target aarch64-unknown-none --cfg fatal_cleanup \
     -C opt-level=2 -C panic=abort -C link-arg=-Tbaremetal/linker.ld \
     baremetal/tests/exception_qemu.rs -o "$output/exception-cleanup.elf"

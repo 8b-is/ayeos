@@ -56,8 +56,6 @@ jobs:
           for state in complete rejected off-unverified fault; do
             python3 scripts/preview_phone.py "$output/$state.png" --state "$state"
           done
-      - name: Offline tone evidence review tests
-        run: python3 -m unittest discover -s scripts -p 'test_review_tone.py' -v
       - name: Install architectural test tools
         run: |
           rustup target add aarch64-unknown-none
