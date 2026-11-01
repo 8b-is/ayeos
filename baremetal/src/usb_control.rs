@@ -567,10 +567,11 @@ impl<'a> Device<'a> {
     pub fn display_idle(&self) -> bool {
         self.stopped || (self.stage == Stage::Setup && self.quiet_polls >= 256)
     }
-    /// EP0-quiet check ignoring 1kHz USB SOF pulses so post-boot S3M jam & keys run.
+    /// EP0-quiet check ignoring 1kHz USB SOF pulses so post-boot S3M jam & keys run
+    /// only after the USB 2.0 Hub TT has delivered the 0-byte STATUS OUT stage.
     #[cfg(feature = "tone-report")]
     pub fn tracker_ready(&self) -> bool {
-        self.stopped || self.ep0_quiet >= 32
+        self.stopped || self.ep0_quiet >= 4096
     }
     /// Indexed endpoint registers: INDEX=0, CSR0 at +0x12, COUNT0 at +0x18.
     /// No delay, rendering, UART, DMA, IRQ unmask or updater inside this path.
@@ -629,7 +630,7 @@ impl<'a> Device<'a> {
             }
             return;
         }
-        let data_in = self.stage == Stage::DataIn;
+        let _data_in = self.stage == Stage::DataIn;
         self.ep0_pending = false;
         if self.stage == Stage::StatusIn {
             if let Some(address) = self.control.status_complete() {
@@ -642,13 +643,17 @@ impl<'a> Device<'a> {
             return;
         }
         let count = io.read8(base + 0x18);
-        // A zero-length OUT status packet may be visible before auto-ack.
-        if data_in && count == 0 {
+        // A zero-length OUT status packet may arrive on a second EP0 interrupt
+        // after TXPKTRDY completion already returned self.stage to Stage::Setup.
+        if count == 0 && csr & 2 == 0 {
             io.write16(base + 0x12, 0x40);
             self.stage = Stage::Setup;
             return;
         }
         if count != 8 || csr & 2 != 0 {
+            for _ in 0..count {
+                let _ = io.read8(base + 0x20);
+            }
             io.write16(base + 0x12, 0x60);
             self.control.abort();
             self.stage = Stage::Setup;

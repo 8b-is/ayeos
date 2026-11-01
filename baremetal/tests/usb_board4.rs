@@ -511,23 +511,29 @@ fn setupend_and_reset_cancel_pending_address() {
 #[test]
 fn zero_out_status_and_immediate_next_setup_do_not_stall() {
     for zero in [false, true] {
-        let mut d = Device::new(b"data");
-        let mut io = Mock::default();
-        io.request(setup(0x80, 6, 0x100, 0, 18));
-        d.poll(&mut io, MUSB);
-        assert_eq!(io.sent, usb_control::DEVICE);
-        d.poll(&mut io, MUSB);
-        assert_eq!(d.requests, 1); // TX/DATAEND active
-        if zero {
-            io.regs.insert(MUSB + 0x12, 1);
-            io.regs.insert(MUSB + 0x18, 0);
-            io.regs.insert(MUSB + 2, 1);
+        for tx_irq_first in [false, true] {
+            let mut d = Device::new(b"data");
+            let mut io = Mock::default();
+            io.request(setup(0x80, 6, 0x100, 0, 18));
             d.poll(&mut io, MUSB);
+            assert_eq!(io.sent, usb_control::DEVICE);
+            d.poll(&mut io, MUSB);
+            assert_eq!(d.requests, 1); // TX/DATAEND active
+            if tx_irq_first {
+                io.complete();
+                d.poll(&mut io, MUSB);
+            }
+            if zero {
+                io.regs.insert(MUSB + 0x12, 1);
+                io.regs.insert(MUSB + 0x18, 0);
+                io.regs.insert(MUSB + 2, 1);
+                d.poll(&mut io, MUSB);
+            }
+            io.request(setup(0x80, 6, 0x200, 0, 18));
+            d.poll(&mut io, MUSB);
+            assert_eq!(d.stalls, 0);
+            assert_eq!(d.requests, 2);
         }
-        io.request(setup(0x80, 6, 0x200, 0, 18));
-        d.poll(&mut io, MUSB);
-        assert_eq!(d.stalls, 0);
-        assert_eq!(d.requests, 2);
     }
 }
 #[test]

@@ -35,8 +35,8 @@ def sleep_ms(ms):
         select.poll().poll(int(ms))
 
 
-class DebugUsb(ct.Usb):
-    ALLOWED = ct.Usb.ALLOWED + (
+class DebugUsb(jam.JamUsb):
+    ALLOWED = jam.JamUsb.ALLOWED + (
         (0xc0, 0xb8),
         (0xc0, 0xb9),
         (0xc0, 0xba),

@@ -80,14 +80,20 @@ class JamUsb(ct.Usb):
         except OSError:
             pass
         sleep_ms(550)
+        self.path = find_tone_usb_device() or self.path
+        self.deadline = time.monotonic_ns() + 60 * 1_000_000_000
         self.fd = os.open(self.path, os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW)
 
     def read(self, kind, request, value=0, index=0, length=64):
-        try:
-            return super().read(kind, request, value, index, length)
-        except OSError:
-            self.reset_reopen()
-            return super().read(kind, request, value, index, length)
+        self.deadline = time.monotonic_ns() + 60 * 1_000_000_000
+        last_err = None
+        for _ in range(3):
+            try:
+                return super().read(kind, request, value, index, length)
+            except OSError as exc:
+                last_err = exc
+                self.reset_reopen()
+        raise last_err
 
 
 def find_tone_usb_device():
@@ -313,24 +319,28 @@ def run_interactive(usb, esp32_tty):
             ch = sys.stdin.read(1)
             if ch in ("q", "\x03", "\x04"):
                 break
-            if ch == " ":
-                sys.stdout.write("\r\nPlaying 8-row ScreamTracker S3M song...\r\n")
-                status = trigger_and_wait(usb, 0x0080, 0, timeout_ms=5000)
-                sys.stdout.write(f"Result: {json.dumps(status)}\r\n")
-            elif ch in "12345678":
-                row = int(ch, 10) - 1
-                sys.stdout.write(f"\r\nPlaying Tracker Row {row:02d}...\r\n")
-                status = trigger_and_wait(usb, 0x0081 + row, 0, timeout_ms=3000)
-                sys.stdout.write(f"Result: {json.dumps(status)}\r\n")
-            elif ch == "e":
-                sys.stdout.write(f"\r\nListening to ESP32 on {esp32_tty}...\r\n")
-                run_esp32_mothership(usb, esp32_tty, steps=4, duration_ms=140)
-            elif ch in KEY_MAP:
-                div, name, hz = KEY_MAP[ch]
-                idx = encode_note_index(gain_db=8, spk="both", duration_ms=150)
-                sys.stdout.write(f"\r\nNote {name} ({hz} Hz, div={div}, +8dB)...\r\n")
-                status = trigger_and_wait(usb, div, idx, timeout_ms=3000)
-                sys.stdout.write(f"Result: {json.dumps(status)}\r\n")
+            try:
+                if ch == " ":
+                    sys.stdout.write("\r\nPlaying 8-row ScreamTracker S3M song...\r\n")
+                    status = trigger_and_wait(usb, 0x0080, 0, timeout_ms=5000)
+                    sys.stdout.write(f"Result: {json.dumps(status)}\r\n")
+                elif ch in "12345678":
+                    row = int(ch, 10) - 1
+                    sys.stdout.write(f"\r\nPlaying Tracker Row {row:02d}...\r\n")
+                    status = trigger_and_wait(usb, 0x0081 + row, 0, timeout_ms=3000)
+                    sys.stdout.write(f"Result: {json.dumps(status)}\r\n")
+                elif ch == "e":
+                    sys.stdout.write(f"\r\nListening to ESP32 on {esp32_tty}...\r\n")
+                    run_esp32_mothership(usb, esp32_tty, steps=4, duration_ms=140)
+                elif ch in KEY_MAP:
+                    div, name, hz = KEY_MAP[ch]
+                    idx = encode_note_index(gain_db=8, spk="both", duration_ms=150)
+                    sys.stdout.write(f"\r\nNote {name} ({hz} Hz, div={div}, +8dB)...\r\n")
+                    status = trigger_and_wait(usb, div, idx, timeout_ms=3000)
+                    sys.stdout.write(f"Result: {json.dumps(status)}\r\n")
+            except OSError as exc:
+                sys.stdout.write(f"\r\n[USB bus re-syncing after note ({exc.strerror})...]\r\n")
+                usb.reset_reopen()
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
         print()
