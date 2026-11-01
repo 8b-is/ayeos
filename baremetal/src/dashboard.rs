@@ -4,22 +4,22 @@
 
 pub const WIDTH: usize = 720;
 pub const HEIGHT: usize = 1640;
-const INK: u32 = 0xFF05_060A;
+pub(crate) const INK: u32 = 0xFF05_060A;
 const PANEL: u32 = 0xFF10_151D;
-const LINE: u32 = 0xFF26_303C;
-const WHITE: u32 = 0xFFEF_F5F4;
-const MUTED: u32 = 0xFFA3_B2C2;
-const MINT: u32 = 0xFF62_E6C9;
-const GOLD: u32 = 0xFFE8_B05C;
+pub(crate) const LINE: u32 = 0xFF26_303C;
+pub(crate) const WHITE: u32 = 0xFFEF_F5F4;
+pub(crate) const MUTED: u32 = 0xFFA3_B2C2;
+pub(crate) const MINT: u32 = 0xFF62_E6C9;
+pub(crate) const GOLD: u32 = 0xFFE8_B05C;
 const VIOLET: u32 = 0xFFB4_8BFF;
 
 pub trait Canvas {
     fn pixel(&mut self, x: usize, y: usize, color: u32);
 }
 
-type Glyph = fn(u8) -> [u8; 16];
+pub(crate) type Glyph = fn(u8) -> [u8; 16];
 
-fn rect(c: &mut impl Canvas, x: usize, y: usize, w: usize, h: usize, color: u32) {
+pub(crate) fn rect(c: &mut impl Canvas, x: usize, y: usize, w: usize, h: usize, color: u32) {
     for py in y..y.saturating_add(h).min(HEIGHT) {
         for px in x..x.saturating_add(w).min(WIDTH) {
             c.pixel(px, py, color);
@@ -27,7 +27,7 @@ fn rect(c: &mut impl Canvas, x: usize, y: usize, w: usize, h: usize, color: u32)
     }
 }
 
-fn panel(c: &mut impl Canvas, y: usize, h: usize) {
+pub(crate) fn panel(c: &mut impl Canvas, y: usize, h: usize) {
     // 16px rounded corners using integer circle coverage.
     for py in 0..h {
         for px in 0..648usize {
@@ -40,7 +40,15 @@ fn panel(c: &mut impl Canvas, y: usize, h: usize) {
     }
 }
 
-fn text(c: &mut impl Canvas, font: Glyph, x: usize, y: usize, scale: usize, s: &str, color: u32) {
+pub(crate) fn text(
+    c: &mut impl Canvas,
+    font: Glyph,
+    x: usize,
+    y: usize,
+    scale: usize,
+    s: &str,
+    color: u32,
+) {
     for (i, ch) in s.bytes().enumerate() {
         for (row, bits) in font(ch).iter().enumerate() {
             for col in 0..8 {

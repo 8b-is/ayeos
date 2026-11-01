@@ -126,6 +126,10 @@ extern "C" fn ayeos_fatal_halt() -> ! {
     if base != 0 {
         // No peripheral probe, watchdog access, USB restart or format allocation.
         // A framebuffer fault reenters the assembly's bounded secondary-fault halt.
+        // Do not leave an earlier green checkpoint visible beneath a fatal record.
+        // Unlike clear_board_page, this presentation primitive never pets a watchdog.
+        #[cfg(feature = "tone-report")]
+        phone_studio::clear_for_fatal(&mut PhoneCanvas { base, stride });
         let show = |row: usize, text: &str| {
             draw_text_opaque_scaled(
                 base,
@@ -139,7 +143,10 @@ extern "C" fn ayeos_fatal_halt() -> ! {
                 76,
             )
         };
+        #[cfg(not(feature = "tone-report"))]
         show(0, "AYEOS AUDIO ALPHA1 / FATAL - photograph this screen");
+        #[cfg(feature = "tone-report")]
+        show(0, phone_studio::FATAL_BANNER);
         show(1, env!("AYEOS_BUILD_REVISION"));
         let f = unsafe { read_volatile(core::ptr::addr_of!(ALPHA_FAULT)) };
         let mut line = board_screen::Line::new();

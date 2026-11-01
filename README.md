@@ -1,6 +1,7 @@
 # ayeOS · 0.2.0
 
-Phone development: [audio tone1 — bounded SGEN / Off evidence](docs/AUDIO_TONE1.md),
+Phone development: [Phone Studio — readable, evidence-backed diagnostics](docs/PHONE_STUDIO.md),
+[audio tone1 — bounded SGEN / Off evidence](docs/AUDIO_TONE1.md),
 [audio alpha1 — instrumented foundation](docs/AUDIO_ALPHA1.md)
 (bare-metal diagnostics and real Marine reference self-test; handset validation pending).
 

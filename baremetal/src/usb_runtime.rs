@@ -404,11 +404,20 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 let _ = write!(line, "INIT={:?} skipped faults={}", init, fault_count());
                 board_line(base, stride, 5, line.text());
                 // Snapshot non-destructive status registers, only with matched FDT.
+                #[cfg(feature = "tone-report")]
+                let mut usb_snapshot = phone_studio::UsbSnapshot::default();
                 if board.ready() {
                     let p = io.read8(usb_phy::MUSB + 1);
                     let d = io.read8(usb_phy::MUSB + 0x60);
                     let h = io.read16(usb_phy::MUSB + 0x6c);
                     let c = io.read16(usb_phy::MUSB + 0x12);
+                    #[cfg(feature = "tone-report")]
+                    {
+                        usb_snapshot.power = p;
+                        usb_snapshot.devctl = d;
+                        usb_snapshot.hwvers = h;
+                        usb_snapshot.csr0 = c;
+                    }
                     let mut line = board_screen::Line::new();
                     let _ = write!(
                         line,
@@ -419,6 +428,12 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     let a = io.read32(usb_phy::PHY + 0x18);
                     let b = io.read32(usb_phy::PHY + 0x68);
                     let c = io.read32(usb_phy::PHY + 0x6c);
+                    #[cfg(feature = "tone-report")]
+                    {
+                        usb_snapshot.acr6 = a;
+                        usb_snapshot.dtm0 = b;
+                        usb_snapshot.dtm1 = c;
+                    }
                     let mut line = board_screen::Line::new();
                     let _ = write!(
                         line,
@@ -428,6 +443,11 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     board_line(base, stride, 7, line.text());
                     let a = io.read32(usb_phy::INFRA + 0x90);
                     let b = io.read32(usb_phy::TOP + 0x90);
+                    #[cfg(feature = "tone-report")]
+                    {
+                        usb_snapshot.infra = a;
+                        usb_snapshot.top = b;
+                    }
                     let mut line = board_screen::Line::new();
                     let _ = write!(
                         line,
@@ -442,6 +462,42 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     10,
                     "USB: W1C enabled; status row updates during quiet polls only",
                 );
+                // Presentation only: consume already frozen evidence. Keep the
+                // dense fallback on initialization failure. All full-screen work
+                // and cache flushing must finish BEFORE SOFTCONN is asserted.
+                #[cfg(feature = "tone-report")]
+                let studio_visible = init == usb_phy::Init::Ready && !io.faulted();
+                #[cfg(feature = "tone-report")]
+                if studio_visible {
+                    let w = |i: usize| {
+                        u32::from_le_bytes(report_bytes[i * 4..i * 4 + 4].try_into().unwrap())
+                    };
+                    let view = phone_studio::View {
+                        revision: env!("AYEOS_BUILD_REVISION"),
+                        dirty: env!("AYEOS_BUILD_DIRTY") != "0",
+                        passed: alpha_tests.0,
+                        failed: alpha_tests.1,
+                        faults: usb_fault_baseline,
+                        i2c_status: w(20),
+                        amp_reads: (0..256).filter(|i| w(board6::AMP + i * 5) == 1).count(),
+                        i2c_restored: w(58) == 1,
+                        pmic_status: w(1344),
+                        pmic_reads: (0..33).filter(|i| w(board6::READS + i * 5) == 1).count(),
+                        pmic_idle: w(1347) == 1,
+                        report_crc: board_pages::crc32(&tone_bytes),
+                        usb: &usb_snapshot,
+                        tone: &tone_report,
+                    };
+                    phone_studio::paint(&mut PhoneCanvas { base, stride }, glyph_8x16_hd, &view);
+                }
+                #[cfg(feature = "tone-report")]
+                let status_y = if studio_visible {
+                    phone_studio::USB_STATUS_Y
+                } else {
+                    68 + 10 * 18
+                };
+                #[cfg(not(feature = "tone-report"))]
+                let status_y = 68 + 10 * 18;
                 flush_dcache_range(base, stride * SCREEN_H * 4);
                 if init == usb_phy::Init::Ready {
                     init = usb_phy::connect(&mut io);
@@ -476,13 +532,13 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     if let Some((column, byte)) = status_row.tick(idle) {
                         let cell = [byte];
                         let text = core::str::from_utf8(&cell).unwrap_or("?");
-                        // Same geometry as board_line: x=20, y=68+row*18,
+                        // Same bounded cell budget on both presentations:
                         // scale=1: 8x16 glyph plus one spacing column.
                         draw_text_opaque_scaled(
                             base,
                             stride,
                             20 + column * 9,
-                            68 + 10 * 18,
+                            status_y,
                             1,
                             text,
                             0xFF62E6C9,

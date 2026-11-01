@@ -21,6 +21,8 @@ use core::ptr::{read_volatile, write_volatile};
 
 mod dashboard;
 #[cfg(feature = "tone-report")]
+mod phone_studio;
+#[cfg(feature = "tone-report")]
 mod tone;
 #[cfg(feature = "tone-report")]
 mod tone_bus;
