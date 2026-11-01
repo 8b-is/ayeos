@@ -15,6 +15,11 @@ struct Hardware {
     ack_stuck: bool,
     read_test: u16,
     swcid: u16,
+    // Inject SYNC gaps only in otherwise idle RDATA, at a selected command boundary.
+    sync_gap: Option<(usize, usize, usize)>, // completed commands, idle samples to skip, gap length
+    gap_value: u32,
+    last_rdata: u32,
+    clears: usize,
 }
 impl Hardware {
     fn ready() -> Self {
@@ -37,6 +42,10 @@ impl Hardware {
             ack_stuck: false,
             read_test: 0x5aa5,
             swcid: 0x5810,
+            sync_gap: None,
+            gap_value: 0x8060_0010, // operator-reported FSM0/INIT1/SYNC0
+            last_rdata: 0,
+            clears: 0,
         }
     }
     fn gate(&mut self) -> bool {
@@ -81,7 +90,21 @@ impl Io for Hardware {
             return 0;
         }
         if p::SNAPSHOTS.contains(&a) {
-            *self.regs.get(&a).unwrap_or(&0)
+            let mut v = *self.regs.get(&a).unwrap_or(&0);
+            if a == p::RDATA {
+                if let Some((command, skip, remaining)) = &mut self.sync_gap {
+                    if *command == self.commands.len() && (v >> 16) & 7 == 0 {
+                        if *skip > 0 {
+                            *skip -= 1;
+                        } else if *remaining > 0 {
+                            *remaining -= 1;
+                            v = self.gap_value;
+                        }
+                    }
+                }
+                self.last_rdata = v;
+            }
+            v
         } else {
             self.i2c.read32(a)
         }
@@ -113,6 +136,11 @@ impl Io for Hardware {
             return;
         }
         if a == p::CMD {
+            assert_eq!(
+                self.last_rdata & (p::INIT | p::SYNC | (15 << 16)),
+                p::INIT | p::SYNC,
+                "command must follow an initialized idle/request-clear/SYNC-high sample"
+            );
             assert_eq!(v & 0x8000ffff, 0, "read-only even-address command");
             let addr = ((v >> 16) << 1) as u16;
             assert_eq!(addr, p::REGISTERS[self.commands.len()]);
@@ -136,6 +164,7 @@ impl Io for Hardware {
         } else {
             assert_eq!(a, p::CLEAR, "only command and valid-clear writes");
             assert_eq!(v, 1);
+            self.clears += 1;
             if !self.ack_stuck {
                 self.regs.insert(p::RDATA, p::INIT | p::SYNC);
             }
@@ -229,7 +258,6 @@ fn pwrap_inherited_busy_and_invalid_config_never_get_cleared_or_started() {
         (p::BASE + 0x9c, 0, 5),
         (p::BASE + 0xa0, 0, 5),
         (p::RDATA, p::SYNC, 5),
-        (p::RDATA, p::INIT, 6),
         (p::RDATA, p::INIT | p::SYNC | (6 << 16), 6),
         (p::RDATA, p::INIT | p::SYNC | (2 << 16), 6),
     ] {
@@ -240,6 +268,104 @@ fn pwrap_inherited_busy_and_invalid_config_never_get_cleared_or_started() {
         assert!(m.commands.is_empty());
         assert!(e.chunks_exact(5).all(|e| e[0] == 0));
         assert_eq!(m.regs[&a], v);
+    }
+}
+
+#[test]
+fn sync_gaps_before_con14_after_ack_and_at_initial_snapshot_are_bounded() {
+    for (commands, skip) in [(0, 0), (0, 1), (31, 2), (31, 1), (33, 1)] {
+        let mut m = Hardware::ready();
+        m.sync_gap = Some((commands, skip, 7));
+        let (h, e) = pmic_only(&mut m, &fixture(0));
+        assert_eq!(h[0], 1, "boundary {commands}/{skip}");
+        assert_eq!(h[3], 1);
+        assert_eq!(m.commands, p::REGISTERS);
+        assert_eq!(m.clears, 33);
+        assert!(e.chunks_exact(5).all(|e| e[0] == 1));
+        assert_eq!(m.sync_gap.unwrap().2, 0);
+    }
+    // Last permitted pre-command sample succeeds; one more low sample stops.
+    for gap in [p::BUDGET as usize - 1, p::BUDGET as usize] {
+        let mut m = Hardware::ready();
+        m.sync_gap = Some((31, 2, gap));
+        let (h, e) = pmic_only(&mut m, &fixture(0));
+        if gap < p::BUDGET as usize {
+            assert_eq!(h[0], 1);
+            assert_eq!(m.commands.len(), 33);
+        } else {
+            assert_eq!(h[0], 6);
+            assert_eq!(m.commands.len(), 31);
+            assert_eq!(m.clears, 31);
+            assert_eq!(&e[155..160], &[6, u32::MAX, 0x80600010, u32::MAX, u32::MAX]);
+            assert_eq!(e[160], 0);
+        }
+        assert!(m.ops < p::BUDGET as usize + 400);
+    }
+}
+
+#[test]
+fn permanent_sync_low_and_pending_or_lost_init_during_wait_do_not_issue_commands() {
+    // A gap in the extra post-ack observation must not be reported as all-done.
+    for commands in [31, 33] {
+        let mut m = Hardware::ready();
+        m.sync_gap = Some((commands, 1, usize::MAX));
+        let (h, e) = pmic_only(&mut m, &fixture(0));
+        assert_eq!(h[0], 6);
+        assert_eq!(h[3], 0);
+        assert_eq!(m.commands.len(), commands);
+        assert_eq!(m.clears, commands);
+        assert_eq!(e[(commands - 1) * 5], 1); // completed read is retained
+        assert!(m.ops < p::BUDGET as usize + 400);
+    }
+    for (value, status) in [
+        (0x80600010, 6),
+        (p::INIT | p::SYNC | (6 << 16), 6),
+        (p::INIT | p::SYNC | (2 << 16), 6),
+        (p::INIT | p::SYNC | (1 << 19), 6),
+        (p::SYNC, 5),
+    ] {
+        let mut m = Hardware::ready();
+        m.sync_gap = Some((31, 2, usize::MAX));
+        m.gap_value = value;
+        let (h, e) = pmic_only(&mut m, &fixture(0));
+        assert_eq!(h[0], status);
+        assert_eq!(h[3], 0);
+        assert_eq!(m.commands.len(), 31);
+        assert_eq!(m.clears, 31);
+        assert_eq!(e[156], u32::MAX);
+        assert_eq!(e[160], 0);
+        assert!(m.ops < p::BUDGET as usize + 400);
+    }
+    let mut m = Hardware::ready();
+    m.regs.insert(p::RDATA, p::INIT);
+    let (h, e) = pmic_only(&mut m, &fixture(0));
+    assert_eq!(h[0], 6);
+    assert_eq!(h[3], 0);
+    assert!(m.commands.is_empty());
+    assert_eq!(m.clears, 0);
+    assert_eq!(e[0], 6);
+    assert_eq!(e[1], u32::MAX);
+    assert!(m.ops < p::BUDGET as usize + 20);
+}
+
+#[test]
+fn faults_in_sync_waits_stop_accesses_without_claiming_idle() {
+    let blob = fixture(0);
+    for skip in [1, 2] {
+        let mut clean = Hardware::ready();
+        clean.sync_gap = Some((31, skip, 5));
+        pmic_only(&mut clean, &blob);
+        for at in 1..=clean.ops {
+            let mut m = Hardware::ready();
+            m.sync_gap = Some((31, skip, 5));
+            m.fault_at = at;
+            let (h, _) = pmic_only(&mut m, &blob);
+            assert_eq!(h[0], 3);
+            assert_eq!(m.ops, at);
+            if m.commands.len() >= 31 {
+                assert_eq!(h[3], 0);
+            }
+        }
     }
 }
 #[test]

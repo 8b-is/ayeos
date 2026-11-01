@@ -144,19 +144,35 @@ fn idle(v: u32) -> bool {
     fsm(v) == 0 && v & SYNC != 0 && v & (1 << 19) == 0
 }
 
+/// Only wait out SYNC-low while our WACS channel is idle/request-clear.
+/// Pending transactions (including inherited FSM6) are never consumed or cleared.
+/// Busy also means this fixed work budget expired; no command was submitted.
+fn wait_sync_idle(io: &mut impl Io, last: &mut u32) -> Status {
+    for _ in 0..BUDGET {
+        let v = io.read32(RDATA);
+        if io.faulted() {
+            return Status::Fault;
+        }
+        *last = v;
+        if v & INIT == 0 {
+            return Status::Config;
+        }
+        if fsm(v) != 0 || v & (1 << 19) != 0 {
+            return Status::Busy;
+        }
+        if idle(v) {
+            return Status::Complete;
+        }
+    }
+    Status::Busy
+}
+
 /// Five words: status, raw value, last RDATA, response polls, ack-idle polls.
 /// Never consumes an inherited response or submits a PMIC write command.
 fn read(io: &mut impl Io, address: u16, out: &mut [u32]) -> Status {
-    let before = io.read32(RDATA);
-    if io.faulted() {
-        return Status::Fault;
-    }
-    out[2] = before;
-    if before & INIT == 0 {
-        return Status::Config;
-    }
-    if !idle(before) {
-        return Status::Busy;
+    let ready = wait_sync_idle(io, &mut out[2]);
+    if ready != Status::Complete {
+        return ready;
     }
     io.write32(CMD, u32::from(address >> 1) << 16);
     if io.faulted() {
@@ -236,7 +252,7 @@ fn probe(io: &mut impl Io, blob: &[u8], h: &mut [u32], entries: &mut [u32]) -> S
     }
     h[15] = h[12];
     h[3] = u32::from(idle(h[12]));
-    if h[3] == 0 {
+    if fsm(h[12]) != 0 || h[12] & (1 << 19) != 0 {
         return Status::Busy;
     }
     for (i, address) in REGISTERS.into_iter().enumerate() {
@@ -248,17 +264,24 @@ fn probe(io: &mut impl Io, blob: &[u8], h: &mut [u32], entries: &mut [u32]) -> S
         if io.faulted() {
             return Status::Fault;
         }
-        let end = io.read32(RDATA);
+        // SYNC can drop again after our ack-idle sample. Bound this final
+        // observation too; don't let a second single-shot gate recreate the race.
+        // On a failed transaction, only observe once, never recover or retry it.
+        let settled = if status == Status::Complete {
+            wait_sync_idle(io, &mut h[15])
+        } else {
+            let end = io.read32(RDATA);
+            if !io.faulted() {
+                h[15] = end;
+            }
+            status
+        };
         if io.faulted() {
             return Status::Fault;
         }
-        h[15] = end;
-        h[3] = u32::from(end & INIT != 0 && idle(end));
-        if status != Status::Complete {
-            return status;
-        }
-        if h[3] == 0 {
-            return Status::Busy;
+        h[3] = u32::from(h[15] & INIT != 0 && idle(h[15]));
+        if settled != Status::Complete {
+            return settled;
         }
         if i == 0 && out[1] != 0x5aa5 {
             return Status::ReadTest;
