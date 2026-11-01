@@ -69,6 +69,18 @@ pub struct Control<'a> {
     tone: &'a [u8],
     #[cfg(feature = "tone-report")]
     tone_crc: u32,
+    #[cfg(feature = "tone-report")]
+    pub pending_tracker: Option<(u16, u16)>,
+    #[cfg(feature = "tone-report")]
+    pub tracker_plays: u32,
+    #[cfg(feature = "tone-report")]
+    pub tracker_last_cmd: u16,
+    #[cfg(feature = "tone-report")]
+    pub tracker_last_outcome: u32,
+    #[cfg(feature = "tone-report")]
+    pub tracker_last_off: u32,
+    #[cfg(feature = "tone-report")]
+    pub tracker_active_row: u8,
 }
 impl<'a> Control<'a> {
     pub fn new(blob: &'a [u8]) -> Self {
@@ -91,6 +103,18 @@ impl<'a> Control<'a> {
             tone: &[],
             #[cfg(feature = "tone-report")]
             tone_crc: 0,
+            #[cfg(feature = "tone-report")]
+            pending_tracker: None,
+            #[cfg(feature = "tone-report")]
+            tracker_plays: 0,
+            #[cfg(feature = "tone-report")]
+            tracker_last_cmd: 0,
+            #[cfg(feature = "tone-report")]
+            tracker_last_outcome: 0,
+            #[cfg(feature = "tone-report")]
+            tracker_last_off: 0,
+            #[cfg(feature = "tone-report")]
+            tracker_active_row: 0,
         }
     }
     #[cfg(feature = "audio-report")]
@@ -111,6 +135,10 @@ impl<'a> Control<'a> {
     pub fn reset(&mut self) {
         self.address = 0;
         self.configuration = 0;
+        #[cfg(feature = "tone-report")]
+        {
+            self.pending_tracker = None;
+        }
         self.abort();
     }
     pub fn abort(&mut self) {
@@ -298,6 +326,25 @@ impl<'a> Control<'a> {
                 out[10..12].copy_from_slice(&1u16.to_le_bytes());
                 out[12..16].copy_from_slice(&crc32(data).to_le_bytes());
                 out[16..16 + data.len()].copy_from_slice(data);
+                Reply::Data(64)
+            }
+            #[cfg(feature = "tone-report")]
+            (0xc0, 0xb8)
+                if length == 64 && self.configuration == 1 && !self.tone.is_empty() =>
+            {
+                if value != 0 {
+                    self.pending_tracker = Some((value, index));
+                    self.tracker_last_cmd = value;
+                }
+                out[..4].copy_from_slice(b"ATRK");
+                out[4..8].copy_from_slice(&1u32.to_le_bytes());
+                out[8..12].copy_from_slice(&self.tracker_plays.to_le_bytes());
+                out[12..14].copy_from_slice(&self.tracker_last_cmd.to_le_bytes());
+                out[14] = self.tracker_active_row;
+                out[15] = u8::from(self.pending_tracker.is_some());
+                out[16..20].copy_from_slice(&self.tracker_last_outcome.to_le_bytes());
+                out[20..24].copy_from_slice(&self.tracker_last_off.to_le_bytes());
+                out[24..36].copy_from_slice(b"s3m-tracker\0");
                 Reply::Data(64)
             }
             _ => Reply::Stall,

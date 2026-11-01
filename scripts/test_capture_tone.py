@@ -25,7 +25,7 @@ def complete():
     tick, opened, closed, stops = 100, 0, 0, 0
     values = {0x040e: 0x5aa5, 0x000a: 0x5810, 0x1ac4: 1, 0x1ad2: 0x8000}
     for i, (kind, phase, addr, mask, expected) in enumerate(t.COMPLETE_SEQUENCE):
-        if phase == 2:
+        if phase == 2 and not opened:
             opened = tick
         if phase == 3 and not stops:
             tick = opened + 3250001

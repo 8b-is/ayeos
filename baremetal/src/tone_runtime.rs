@@ -57,7 +57,7 @@ fn tone_run(
         base,
         stride,
         76,
-        "TONE1: one 250ms SGEN window, lineout -40dB; preparing Off evidence",
+        "TONE1: one 250ms SGEN arpeggio, lineout 0dB; preparing Off evidence",
     );
     flush_dcache_range(base, stride * SCREEN_H * 4);
     let r = if gate {
@@ -107,6 +107,104 @@ fn tone_run(
     );
     flush_dcache_range(base, stride * SCREEN_H * 4);
     r
+}
+
+fn div_to_key_index(div: u16) -> u8 {
+    match div {
+        22.. => 0,
+        20..=21 => 1,
+        18..=19 => 2,
+        17 => 3,
+        16 => 4,
+        15 => 5,
+        14 => 6,
+        13 => 7,
+        12 => 6,
+        11 => 8,
+        10 => 9,
+        9 => 10,
+        8 => 10,
+        7 => 12,
+        6 => 13,
+        5 => 15,
+        4 => 17,
+        3 => 20,
+        2 => 22,
+        _ => 23,
+    }
+}
+
+fn tone_play_live(
+    gate: bool,
+    studio_visible: bool,
+    cmd_value: u16,
+    cmd_index: u16,
+    base: usize,
+    stride: usize,
+    active_row: &mut usize,
+) -> (u32, u32) {
+    if !gate {
+        return (2, 0);
+    }
+    let Ok(mut bus) = tone_bus::Hardware::prepare(UsbIo {
+        start_faults: fault_count(),
+    }) else {
+        return (2, 0);
+    };
+    let custom_step;
+    let (steps, base_row): (&[tone::TrackerStep], usize) = if cmd_value == 0x0080 {
+        (&tone::PATTERN, 0)
+    } else if (0x0081..=0x0088).contains(&cmd_value) {
+        let idx = ((cmd_value - 0x0081) as usize) % tone::PATTERN.len();
+        *active_row = idx;
+        (&tone::PATTERN[idx..=idx], idx)
+    } else if (1..=31).contains(&cmd_value) {
+        let div = cmd_value;
+        let spk_mask = match (cmd_index & 3) as u8 {
+            1 => 1,
+            2 => 2,
+            _ => 3,
+        };
+        let (gain_reg, gain_db) = match (cmd_index >> 2) & 7 {
+            1 => (0x0204, 4),
+            2 => (0x0000, 8),
+            3 => (0x060c, -4),
+            4 => (0x0912, -10),
+            _ => (0x0408, 0),
+        };
+        let dur_10ms = (cmd_index >> 8) as u32;
+        let duration_us = if dur_10ms == 0 {
+            140_000
+        } else {
+            (dur_10ms * 10_000).clamp(20_000, 1_500_000)
+        };
+        custom_step = [tone::TrackerStep {
+            note: "JAM",
+            key_index: div_to_key_index(div),
+            hz: 6000 / div,
+            div,
+            gain_reg,
+            gain_db,
+            spk_mask,
+            duration_us,
+        }];
+        (&custom_step, *active_row)
+    } else {
+        return (2, 0);
+    };
+
+    let r = tone::play_steps(&mut bus, steps, |idx, step| {
+        pet_mediatek_watchdog();
+        let row = (base_row + idx) % tone::PATTERN.len();
+        *active_row = row;
+        if studio_visible {
+            let mut canvas = PhoneCanvas { base, stride };
+            phone_studio::paint_tracker_rows(&mut canvas, glyph_8x16_hd, row);
+            phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, step.key_index);
+            flush_dcache_range(base, stride * SCREEN_H * 4);
+        }
+    });
+    (r.outcome, r.off)
 }
 
 fn tone_fatal_cleanup() {

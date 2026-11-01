@@ -504,6 +504,20 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 }
                 let mut prior = (u8::MAX, u8::MAX, u32::MAX, false, u32::MAX, u32::MAX);
                 let mut status_row = usb_status::StatusRow::new();
+                #[cfg(feature = "tone-report")]
+                let tone_gate = tone_report.outcome == 1 && tone_report.verified_off();
+                #[cfg(feature = "tone-report")]
+                let kp_idle = safe_mmio_read16(KP_MEM1_ADDR);
+                #[cfg(feature = "tone-report")]
+                let mut kp_held = 0u32;
+                #[cfg(feature = "tone-report")]
+                let mut active_row = 0usize;
+                #[cfg(feature = "tone-report")]
+                let mut scriller_phase = 0usize;
+                #[cfg(feature = "tone-report")]
+                let mut scriller_col = 0usize;
+                #[cfg(feature = "tone-report")]
+                let mut idle_ticks = 0u32;
                 loop {
                     pet_mediatek_watchdog();
                     if init == usb_phy::Init::Attached {
@@ -547,7 +561,60 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                         );
                         usb_barrier(); // only order this cell's writes; no range sweep
                     }
-                    // No pacer, timer wait, keypad action, full-screen repaint or logging.
+                    #[cfg(feature = "tone-report")]
+                    if idle && status_row.ready() {
+                        idle_ticks = idle_ticks.wrapping_add(1);
+                        let mut trigger = device.control.pending_tracker.take();
+                        if trigger.is_none() && studio_visible && kp_idle != 0 && idle_ticks & 0xff == 0 {
+                            let kp_now = safe_mmio_read16(KP_MEM1_ADDR);
+                            if kp_now != kp_idle {
+                                kp_held = kp_held.saturating_add(1);
+                                if kp_held == 64 {
+                                    trigger = Some((0x0080, 0));
+                                }
+                            } else {
+                                if (3..64).contains(&kp_held) {
+                                    let next_row = (active_row + 1) % tone::PATTERN.len();
+                                    trigger = Some((0x0081 + next_row as u16, 0));
+                                }
+                                kp_held = 0;
+                            }
+                        }
+                        if let Some((cmd_val, cmd_idx)) = trigger {
+                            let (outcome, off) = tone_play_live(
+                                tone_gate,
+                                studio_visible,
+                                cmd_val,
+                                cmd_idx,
+                                base,
+                                stride,
+                                &mut active_row,
+                            );
+                            device.control.tracker_plays =
+                                device.control.tracker_plays.saturating_add(1);
+                            device.control.tracker_last_cmd = cmd_val;
+                            device.control.tracker_last_outcome = outcome;
+                            device.control.tracker_last_off = off;
+                            device.control.tracker_active_row = active_row as u8;
+                        } else if studio_visible
+                            && device.control.configuration == 1
+                            && idle_ticks & 0x3ff == 0
+                        {
+                            let mut canvas = PhoneCanvas { base, stride };
+                            phone_studio::paint_scriller_cell(
+                                &mut canvas,
+                                glyph_8x16_hd,
+                                scriller_phase,
+                                scriller_col,
+                            );
+                            usb_barrier();
+                            scriller_col += 1;
+                            if scriller_col >= 64 {
+                                scriller_col = 0;
+                                scriller_phase = scriller_phase.wrapping_add(1);
+                            }
+                        }
+                    }
                 }
             }
         } else {

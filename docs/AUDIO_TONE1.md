@@ -72,20 +72,27 @@ machine then:
 2. Enables clock buffer, AUDGLB, CLKSQ, NCP/ZCD/AUDIF/AUD clocks, observes250µs,
    enables DAC/power/testmodel and AFE clocks, observes250µs, then AFE.
 3. Uses the documented SGEN sequence229a=0006,2296=cba1,229a=0003,229a=000b;
-   CFG022c0 maskff3f→0 and CFG122c2→0001. Selects SGEN, enables SRC/DAC while muted.
+   CFG022c0 maskff3f→0 and CFG122c2→0001. Connects `DAC In Mux = Sgen` via
+   `MT6358_AFE_TOP_CON0` (`2290` bit0→1), enables SRC/DAC while muted.
 4. Applies the lineout NCP/LDO/bias/DACR→LOL sequence with250µs/100µs waits.
    On MT6358 silicon (`mt6358.h`), `ZCD_CON0` (`0x2488`) implements bits0..6
    (`0x007f`), so the `zcd_enable` update (`mask=0x07ff`, `expected=0x010b`)
    reads back `0x000b` (`RG_AUDZCDGAINSTEPTIME=5`, `RG_AUDZCDENABLE=1`) on
    hardware or `0x010b` in raw 16-bit simulation; both are accepted.
-   Both lineout gain fields stay at the source's named **−40dB** value1f
-   (`ZCD_CON1=0f9f`), replacing its initial−10dB/runtime gain choice. SGEN's
-   undocumented attenuation/channel interpretations are not used.
+   `ZCD_CON1` (`0x248a`) applies the codec's `-10dB` pre-stage (`0x0912`) followed
+   by `0dB` lineout gain (`0x0408`), returning to `-40dB` (`0x0f9f`) on shutdown.
 5. Applies both18-pair BLU Music profiles in their original order. Only04 differs:
    3b at58,2b at59. Verifies each write; waits30ms for the configured ZCD timeout.
-6. Records a timestamp **before** the unmute transaction. Requests stop when
-   elapsed counter ticks reach3250000 (250ms), without extending that deadline
-   for command duration. The actual silent interval needs physical measurement.
+6. Records a timestamp **before** the unmute transaction. Plays a 4-note ascending
+   ScreamTracker arpeggio (`22c2` dividers `12, 8, 6, 4` → `500, 750, 1000, 1500Hz`)
+   across the250ms (3250000-tick) window and requests stop when elapsed counter
+   ticks reach3250000, without extending that deadline for command duration.
+   Post-boot interactive playback is available via Volume keys (short tap steps
+   and plays the next row; long hold plays the 8-row ScreamTracker `S3M` pattern)
+   or USB vendor IN request `0xb8` (`ATRK`, `scripts/screamtracker_jam.py`,
+   including `--esp32-mothership` duet mode with `VAK:MEDUSA` on `/dev/ttyACM0`);
+   every interactive play executes the full `shutdown` and `verified_off` (`17/17`)
+   check without mutating the frozen boot reports `0xb0..0xb7`.
 
 Normal and error cleanup use the same routine. Attempt SGEN mute/disable, LOL
 open, both full-byte PA Off writes, SDM/scrambler stop0000/cba0, SRC/AFE/DACR/LOL

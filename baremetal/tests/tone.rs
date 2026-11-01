@@ -120,13 +120,26 @@ impl Bus for Model {
             ![0x1ac4, 0x1ad2].contains(&r),
             "always-on supply is never owned"
         );
-        if r == 0x22c0 && v & 0xc0 == 0x80 {
-            assert_eq!(self.pm[&0x248a] & 0xf9f, 0xf9f, "unmute only at -40dB");
+        if r == 0x22c0
+            && v & 0xc0 == 0x80
+            && self.pm.get(&0x22c0).copied().unwrap_or(0) & 0x40 != 0
+        {
+            assert_eq!(self.pm[&0x2290] & 1, 1, "DAC In Mux = Sgen must be connected");
+            assert!(
+                [0x0000, 0x0204, 0x0408, 0x060c, 0x0912].contains(&(self.pm[&0x248a] & 0xf9f)),
+                "documented lineout PGA gain step"
+            );
             assert_eq!(self.pm[&0x2488], if self.standby_3e { 0x0b } else { 0x10b });
             assert_eq!(self.pm[&0x2416] & 0xf, 7);
-            assert_eq!(self.pm[&0x22c2], 1, "documented CFG1, no guessed channels");
+            assert!(
+                (1..=31).contains(&self.pm[&0x22c2]),
+                "documented CFG1 divider"
+            );
             for a in [0x58, 0x59] {
                 for (reg, x) in tone::MUSIC {
+                    if reg == 2 {
+                        continue;
+                    }
                     assert_eq!(
                         self.pa[&(a, reg)],
                         if a == 0x59 && reg == 4 { 0x2b } else { x }
@@ -369,5 +382,21 @@ fn usb_tone_snapshot_is_read_only_and_survives_reset() {
         c.setup([0xc0, 0xb7, 134, 0, 0, 0, 64, 0], &mut out),
         Reply::Stall
     );
+    assert_eq!(
+        c.setup([0xc0, 0xb8, 0x80, 0, 0, 0, 64, 0], &mut out),
+        Reply::Data(64)
+    );
+    assert_eq!(&out[..4], b"ATRK");
+    assert_eq!(c.pending_tracker, Some((0x0080, 0)));
+    c.reset();
+    assert_eq!(c.pending_tracker, None);
+    let mut m_jam = Model::new();
+    let mut visited = 0usize;
+    let r_jam = tone::play_steps(&mut m_jam, &tone::PATTERN, |_, _| {
+        visited += 1;
+    });
+    assert_eq!(visited, 8);
+    assert_eq!(r_jam.outcome, 1);
+    assert!(r_jam.verified_off() && r_jam.restored);
     assert_eq!(usb_control::DEVICE[12..14], [0x62, 5]);
 }

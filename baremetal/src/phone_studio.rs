@@ -156,10 +156,132 @@ fn test(passed: u32, failed: u32, bit: u32) -> &'static str {
     }
 }
 
+pub const SCRILLER_TEXT: &[u8] =
+    b"*** AYEOS 5.6 SCREAMTRACKER S3M STUDIO * DUAL AW87394 + MT6358 SGEN * ZERO FLOAT * VOL TAP=NOTE / HOLD=SONG / USB 0xB8=LIVE JAM * {<3,<3,<3}+1 ***   ";
+pub const SCRILLER_Y: usize = 604;
+
+pub fn paint_scriller_cell(c: &mut impl Canvas, font: Glyph, phase: usize, col: usize) {
+    if col >= 64 {
+        return;
+    }
+    let x = 68 + col * 9;
+    rect(c, x, 566, 9, 78, INK);
+    for (layer, color) in [LINE, GOLD, MINT].iter().enumerate() {
+        for dx in 0..9usize {
+            let px = col * 9 + dx;
+            let t = ((px + (phase & 255) + layer * 53) % 576) as i64 - 288;
+            let arch = (82944 - t * t) * (82944 - t * t) / 190_000_000;
+            let py = (628 - arch - layer as i64 * 9).clamp(570, 640) as usize;
+            rect(c, x + dx, py, 1, 2, *color);
+        }
+    }
+    let ch = SCRILLER_TEXT[(phase + col) % SCRILLER_TEXT.len()];
+    let wave = ((col + phase) % 8) as i64 - 4;
+    let bounce = (16 - wave * wave).max(0) as usize;
+    let cell = [ch];
+    if let Ok(s) = core::str::from_utf8(&cell) {
+        text(c, font, x, SCRILLER_Y - bounce, 1, s, WHITE);
+    }
+}
+
+pub fn paint_tracker_rows(c: &mut impl Canvas, font: Glyph, active_row: usize) {
+    rect(c, 52, 732, 616, 232, INK);
+    text(
+        c,
+        font,
+        60,
+        736,
+        1,
+        "ROW  NOTE  FREQ    SGEN   GAIN   SPK-PA       MODE",
+        MINT,
+    );
+    rect(c, 60, 754, 600, 1, LINE);
+    for (i, step) in tone::PATTERN.iter().enumerate() {
+        let ry = 760 + i * 25;
+        let selected = i == active_row % tone::PATTERN.len();
+        if selected {
+            rect(c, 56, ry - 2, 608, 22, LINE);
+        }
+        let spk = match step.spk_mask & 3 {
+            1 => "L:58 SOLO ",
+            2 => "R:59 SOLO ",
+            _ => "58+59 DUAL",
+        };
+        let mut line = Line::new();
+        let _ = write!(
+            line,
+            "{}{:02}  {}   {:04}Hz  D:{:02}   {:+03}dB  {}   {}",
+            if selected { '>' } else { ' ' },
+            i,
+            step.note,
+            step.hz,
+            step.div,
+            step.gain_db,
+            spk,
+            if selected { "PLAY/SEL" } else { "READY   " }
+        );
+        text(
+            c,
+            font,
+            60,
+            ry,
+            1,
+            line.text(),
+            if selected { GOLD } else { WHITE },
+        );
+    }
+}
+
+pub fn paint_keyboard(c: &mut impl Canvas, font: Glyph, active_key: u8) {
+    let kx0 = 66usize;
+    let ky0 = 1024usize;
+    let kw = 41usize;
+    let kh = 112usize;
+    rect(c, kx0 - 4, ky0 - 4, kw * 14 + 8, kh + 8, LINE);
+    // 14 white keys across 2 octaves (C4..B5 / C5..B6)
+    let white_semitones: [u8; 14] = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23];
+    let white_labels: [&str; 14] = [
+        "C", "D", "E", "F", "G", "A", "B", "C", "D", "E", "F", "G", "A", "B",
+    ];
+    for (i, &semi) in white_semitones.iter().enumerate() {
+        let x = kx0 + i * kw;
+        let active = active_key == semi;
+        rect(c, x, ky0, kw - 2, kh, if active { MINT } else { WHITE });
+        text(
+            c,
+            font,
+            x + 14,
+            ky0 + kh - 22,
+            1,
+            white_labels[i],
+            INK,
+        );
+    }
+    // 10 black sharp keys
+    let black_keys: [(usize, u8); 10] = [
+        (0, 1),
+        (1, 3),
+        (3, 6),
+        (4, 8),
+        (5, 10),
+        (7, 13),
+        (8, 15),
+        (10, 18),
+        (11, 20),
+        (12, 22),
+    ];
+    for &(after_white, semi) in &black_keys {
+        let x = kx0 + (after_white + 1) * kw - 13;
+        let active = active_key == semi;
+        rect(c, x, ky0, 24, 68, if active { GOLD } else { INK });
+        rect(c, x + 2, ky0 + 2, 20, 62, if active { GOLD } else { LINE });
+    }
+}
+
 pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
     rect(c, 0, 0, dashboard::WIDTH, dashboard::HEIGHT, INK);
     text(c, font, 40, 78, 2, "ayeOS", MINT);
-    text(c, font, 454, 84, 1, "PHONE / STUDIO", MUTED);
+    text(c, font, 418, 84, 1, "SCREAMTRACKER / S3M", GOLD);
     rect(c, 40, 134, 640, 1, LINE);
     text(c, font, 40, 164, 3, "Made to understand.", WHITE);
     text(
@@ -168,7 +290,7 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         42,
         234,
         1,
-        "BLU G75 / BARE METAL / 5.6 / AUDIO-TONE1",
+        "BLU G75 / BARE METAL / 5.6 / AUDIO-TONE1 + S3M",
         MUTED,
     );
 
@@ -189,111 +311,72 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
             "If sound persists, use physical power-off now.",
         ),
     };
-    panel(c, 282, 266);
-    text(c, font, 60, 306, 1, "01 / BOOT CHECKPOINT", color);
+    panel(c, 282, 240);
+    text(c, font, 60, 306, 1, "01 / BOOT & AUDIO CHECKPOINT", color);
     text(c, font, 60, 346, 2, headline, color);
-    text(
-        c,
-        font,
-        60,
-        394,
-        1,
-        "Not proof of audible sound or physical shutdown.",
-        MUTED,
-    );
     let mut line = Line::new();
     let _ = write!(
         line,
-        "CRC {} / MARINE {} / EXCEPTION {}",
+        "CRC {} / MARINE {} / EXC {} / PA {}/256 / PMIC {}/33",
         test(v.passed, v.failed, 1),
         test(v.passed, v.failed, 2),
-        test(v.passed, v.failed, 4)
+        test(v.passed, v.failed, 4),
+        v.amp_reads,
+        v.pmic_reads
     );
-    text(c, font, 60, 430, 1, line.text(), WHITE);
-    let mut line = Line::new();
-    let _ = write!(
-        line,
-        "Pre-USB faults: {} / dirty build: {}",
-        v.faults,
-        yes(v.dirty)
-    );
-    text(c, font, 60, 466, 1, line.text(), MUTED);
-    // The identity is always printed in full, never a success-shaped label.
-    text(c, font, 60, 502, 1, v.revision, MUTED);
-
-    panel(c, 568, 260);
-    text(c, font, 60, 592, 1, "02 / AUDIO AND STOP", color);
-    text(c, font, 60, 632, 2, outcome_name(v.tone.outcome), WHITE);
+    text(c, font, 60, 392, 1, line.text(), WHITE);
     let mut line = Line::new();
     if v.tone.outcome == 2 {
-        let _ = write!(line, "Audio not attempted / no final Off claim");
+        let _ = write!(line, "Preflight rejected / Audio not attempted / Faults: {}", v.faults);
     } else {
         let _ = write!(
             line,
-            "Observed Off: {}/17 / controllers restored: {}",
+            "{} / Off: {}/17 / Restored: {} / Gain: 0dB",
+            outcome_name(v.tone.outcome),
             (v.tone.off & tone::OFF_MASK).count_ones(),
             yes(v.tone.restored)
         );
     }
-    text(c, font, 60, 682, 1, line.text(), color);
+    text(c, font, 60, 424, 1, line.text(), color);
     let mut line = Line::new();
     let _ = write!(
         line,
-        "Attempt error: {} / cleanup errors: {}",
+        "Err: {}/{} / CRC32: {:08x} / Dirty: {} / I2C:{}/PMIC:{}",
         error_name(v.tone.error),
-        v.tone.cleanup_errors
+        v.tone.cleanup_errors,
+        v.report_crc,
+        yes(v.dirty),
+        v.i2c_status,
+        v.pmic_status
     );
-    text(c, font, 60, 718, 1, line.text(), WHITE);
+    text(c, font, 60, 456, 1, line.text(), MUTED);
+    // The identity is always printed in full, never a success-shaped label.
+    text(c, font, 60, 488, 1, v.revision, MUTED);
+
+    panel(c, 534, 122);
+    text(c, font, 60, 546, 1, "02 / DEMOSCENE SCRILLER", GOLD);
+    text(c, font, 432, 546, 1, "INTEGER WAVE BANNER", MINT);
+    for col in 0..64 {
+        paint_scriller_cell(c, font, 0, col);
+    }
+
+    panel(c, 668, 308);
+    text(c, font, 60, 686, 1, "03 / SCREAMTRACKER S3M PATTERN", GOLD);
+    text(c, font, 414, 686, 1, "MT6358 SGEN + AW87394", MINT);
     text(
         c,
         font,
         60,
-        754,
+        710,
         1,
-        "250ms requested / SGEN bypasses live PCM",
+        "Boot played 4-note arpeggio (500->750->1000->1500Hz @ 0dB).",
         MUTED,
     );
-    text(
-        c,
-        font,
-        60,
-        790,
-        1,
-        "Sound, stop, speakers and pops: ask the listener.",
-        MUTED,
-    );
+    paint_tracker_rows(c, font, 0);
 
-    panel(c, 848, 222);
-    text(c, font, 60, 872, 1, "03 / PRE-TONE HARDWARE EVIDENCE", MINT);
-    let mut line = Line::new();
-    let _ = write!(
-        line,
-        "PA reads: {}/256 / I2C restored: {}",
-        v.amp_reads,
-        yes(v.i2c_restored)
-    );
-    text(c, font, 60, 912, 1, line.text(), WHITE);
-    let mut line = Line::new();
-    let _ = write!(
-        line,
-        "PMIC reads: {}/33 / WACS2 idle: {}",
-        v.pmic_reads,
-        yes(v.pmic_idle)
-    );
-    text(c, font, 60, 948, 1, line.text(), WHITE);
-    let mut line = Line::new();
-    let _ = write!(
-        line,
-        "I2C status: {} / PMIC status: {} (1 = complete)",
-        v.i2c_status, v.pmic_status
-    );
-    text(c, font, 60, 984, 1, line.text(), MUTED);
-    let mut line = Line::new();
-    let _ = write!(line, "Frozen tone CRC32: {:08x} / RAM only", v.report_crc);
-    text(c, font, 60, 1020, 1, line.text(), MUTED);
-
-    panel(c, 1090, 216);
-    text(c, font, 60, 1114, 1, "04 / NEXT STEP", color);
+    panel(c, 988, 318);
+    text(c, font, 60, 1002, 1, "04 / MUSIC KEYBOARD & NEXT STEP", color);
+    paint_keyboard(c, font, tone::PATTERN[0].key_index);
     text(c, font, 60, 1154, 1, next, color);
     text(
         c,
@@ -301,8 +384,8 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         60,
         1190,
         1,
-        "Capture: capture_tone.py / keep raw data private",
-        WHITE,
+        "VOL TAP: step + play note  /  VOL HOLD: play 8-row S3M song",
+        MINT,
     );
     text(
         c,
@@ -310,8 +393,8 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         60,
         1226,
         1,
-        "Marine: synthetic fixture / PCM + Phoenix: not active",
-        MUTED,
+        "LAPTOP USB JAM: sudo python3 scripts/screamtracker_jam.py",
+        WHITE,
     );
     text(
         c,
@@ -319,7 +402,7 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         60,
         1262,
         1,
-        "No autonomous repair, radio or network claim.",
+        "Capture: capture_tone.py / Every note verifies Off (17/17).",
         MUTED,
     );
 
@@ -329,7 +412,7 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         20,
         1342,
         1,
-        "USB / 18d1:4ee0 / bcd0562 / READ ONLY",
+        "USB / 18d1:4ee0 / bcd0562 / EP0 + S3M JAM (0xB8)",
         MINT,
     );
     text(
@@ -338,7 +421,7 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         20,
         1374,
         1,
-        "Live transport below; not part of the frozen reports.",
+        "Live transport below; frozen boot reports 0xB0..0xB7 immutable.",
         MUTED,
     );
     text(
@@ -358,7 +441,7 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
         40,
         1480,
         1,
-        "USB reset never replays a tone. No touch controls.",
+        "USB reset never replays a tone. Vol keys / 0xB8 stop cleanly.",
         MUTED,
     );
     text(c, font, 40, 1534, 1, "Fine touch from within.", MINT);
