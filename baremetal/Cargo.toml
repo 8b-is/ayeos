@@ -10,6 +10,7 @@ usb-report = ["board-report"]
 audio-report = ["usb-report"]
 board6-report = ["audio-report"]
 alpha-report = ["board6-report", "dep:marine-core"]
+tone-report = ["alpha-report"]
 
 [dependencies]
 marine-core = { path = "vendor/marine-core", optional = true }

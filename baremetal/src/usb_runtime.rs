@@ -98,8 +98,10 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
     let banner = "AYEOS studio-board5-r2 / SmartPA ID probe + USB EP0";
     #[cfg(all(feature = "board6-report", not(feature = "alpha-report")))]
     let banner = "AYEOS studio-board6-r2 / inherited PA windows + MT6358 readback";
-    #[cfg(feature = "alpha-report")]
+    #[cfg(all(feature = "alpha-report", not(feature = "tone-report")))]
     let banner = "AYEOS audio-alpha1 / fault records + genuine Marine fixture";
+    #[cfg(feature = "tone-report")]
+    let banner = "AYEOS audio-tone1 / bounded SGEN + explicit Off readback";
     board_line(base, stride, 0, banner);
     board_line(
         base,
@@ -219,12 +221,19 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     70,
                     "ID 18d1:4ee0 bcd0546; capture_board6.py; inherited state, not POR",
                 );
-                #[cfg(feature = "alpha-report")]
+                #[cfg(all(feature = "alpha-report", not(feature = "tone-report")))]
                 board_line(
                     base,
                     stride,
                     70,
                     "ID 18d1:4ee0 bcd0561; capture_alpha.py; keep raw evidence private",
+                );
+                #[cfg(feature = "tone-report")]
+                board_line(
+                    base,
+                    stride,
+                    70,
+                    "ID 18d1:4ee0 bcd0562; capture_tone.py; keep raw evidence private",
                 );
                 board_line(
                     base,
@@ -301,11 +310,19 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                         w[1344], w[1347], w[1377], w[1382], w[1387]
                     );
                     board_line(base, stride, 16, line.text());
+                    #[cfg(not(feature = "tone-report"))]
                     board_line(
                         base,
                         stride,
                         17,
                         "ffffffff = unobserved; status1=complete. No tone/profile loaded.",
+                    );
+                    #[cfg(feature = "tone-report")]
+                    board_line(
+                        base,
+                        stride,
+                        17,
+                        "Board6 values = PRE-TONE snapshot. Final Off evidence appears below.",
                     );
                     // Full byte window fits on this fixed fallback page. '--' is
                     // not a zero: it means the read did not complete.
@@ -352,6 +369,8 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 };
                 #[cfg(not(feature = "audio-report"))]
                 let usb_fault_baseline = initial_faults;
+                #[cfg(feature = "tone-report")]
+                let tone_report = tone_run(blob, &report_bytes, alpha_tests, base, stride);
                 #[cfg(feature = "audio-report")]
                 let usb_fault_baseline = fault_count();
                 let mut io = UsbIo {
@@ -367,6 +386,16 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     alpha_snapshot(alpha_tests, board_pages::crc32(&report_bytes));
                 #[cfg(feature = "alpha-report")]
                 device.control.set_diagnostics(&diagnostics_bytes);
+                #[cfg(feature = "tone-report")]
+                let tone_bytes = tone_report.encode(
+                    env!("AYEOS_BUILD_REVISION"),
+                    env!("AYEOS_BUILD_DIRTY") != "0",
+                    board_pages::crc32(&report_bytes),
+                    board_pages::crc32(&diagnostics_bytes),
+                    board_pages::crc32(blob),
+                );
+                #[cfg(feature = "tone-report")]
+                device.control.set_tone(&tone_bytes);
                 // Commit the completed fallback before potentially faulting in USB init.
                 #[cfg(feature = "board6-report")]
                 flush_dcache_range(base, stride * SCREEN_H * 4);

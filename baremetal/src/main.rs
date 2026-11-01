@@ -20,6 +20,14 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 mod dashboard;
+#[cfg(feature = "tone-report")]
+mod tone;
+#[cfg(feature = "tone-report")]
+mod tone_bus;
+#[cfg(feature = "tone-report")]
+mod tone_board;
+#[cfg(feature = "tone-report")]
+include!("tone_runtime.rs");
 #[cfg(feature = "alpha-report")]
 mod diagnostics;
 #[cfg(feature = "alpha-report")]
