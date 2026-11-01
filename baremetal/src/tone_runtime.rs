@@ -397,6 +397,9 @@ fn tone_debug_exec(
         8 => {
             const SPI0_BASE: usize = 0x1100_a000;
             let f0 = fault_count();
+            if safe_mmio_read32(0x1000_1094) & (1 << 21) != 0 || (sub & 2 != 0) {
+                safe_mmio_write32(0x1000_108c, 1 << 21);
+            }
             if sub == 0 {
                 for i in 0..8usize {
                     let w = safe_mmio_read32(SPI0_BASE + i * 4);
@@ -410,9 +413,6 @@ fn tone_debug_exec(
                     0x300 | ((f1 - f0) as u32)
                 };
             } else {
-                if sub & 2 != 0 {
-                    safe_mmio_write32(0x1000_108c, 1 << 21);
-                }
                 let nwords = ((sub & 0x0f) as usize).clamp(1, 4);
                 let cmd0 = safe_mmio_read32(SPI0_BASE + 0x18);
                 safe_mmio_write32(SPI0_BASE + 0x18, cmd0 | (1 << 2));

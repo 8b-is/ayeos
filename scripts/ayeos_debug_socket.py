@@ -19,6 +19,8 @@ import struct
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import capture_board4 as b4
 import capture_tone as ct
 import screamtracker_jam as jam
@@ -46,21 +48,18 @@ def decode_adbg(packet):
     if len(packet) != 64 or packet[:4] != b"ADBG":
         raise ValueError("invalid ADBG response packet")
     (
-        version,
         seq,
         last_op,
         last_idx,
         status,
         result,
+        dbg_arg,
+        pending,
+        touch_en,
         touch_x,
         touch_y,
         touch_events,
-        touch_irq_gpio,
-        touch_en,
-        pending,
-    ) = struct.unpack_from("<IIHHIIHHHBBB", packet, 4)
-    if version != 1:
-        raise ValueError(f"unexpected ADBG version {version}")
+    ) = struct.unpack_from("<IHHIIIBBHHH", packet, 4)
     buf = packet[32:64]
     words = list(struct.unpack("<8I", buf))
     u16s = list(struct.unpack("<16H", buf))
@@ -73,11 +72,11 @@ def decode_adbg(packet):
         "status_hex": f"0x{status:04x}",
         "result": result,
         "result_hex": f"0x{result:08x}",
+        "dbg_arg_hex": f"0x{dbg_arg:08x}",
         "touch": {
             "last_x": touch_x,
             "last_y": touch_y,
             "events": touch_events,
-            "irq_gpio": touch_irq_gpio,
             "enabled": bool(touch_en),
         },
         "pending": bool(pending),
@@ -92,11 +91,6 @@ def open_debug_usb(device_path=None):
     if not path:
         raise RuntimeError("No AyeOS audio-tone1 USB device (18d1:4ee0 bcdDevice=0562) found")
     usb = DebugUsb(path, 60)
-    dev_desc = usb.read(0x80, 6, 0x0100, length=18)
-    cfg_desc = usb.read(0x80, 6, 0x0200, length=18)
-    if dev_desc != ct.DEVICE or cfg_desc != b4.CONFIG:
-        usb.close()
-        raise RuntimeError("USB device descriptor does not match audio-tone1 (0562)")
     return usb, path
 
 
@@ -104,29 +98,31 @@ def set_arg32(usb, val32):
     lo = val32 & 0xFFFF
     hi = (val32 >> 16) & 0xFFFF
     usb.read(0xc0, 0xb9, 0x0000, lo, 64)
-    usb.read(0xc0, 0xb9, 0x0100, hi, 64)
+    usb.read(0xc0, 0xb9, 0x0001, hi, 64)
 
 
 def set_addr32(usb, addr32):
     lo = addr32 & 0xFFFF
     hi = (addr32 >> 16) & 0xFFFF
-    usb.read(0xc0, 0xb9, 0x0200, lo, 64)
-    usb.read(0xc0, 0xb9, 0x0300, hi, 64)
+    usb.read(0xc0, 0xb9, 0x000a, lo, 64)
+    usb.read(0xc0, 0xb9, 0x000b, hi, 64)
 
 
-def exec_debug_op(usb, op_val, idx=0, timeout_ms=2500):
+def exec_debug_op(usb, op_val, idx=0, timeout_ms=2500, initial_wait_ms=25):
     before = decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
     target_seq = (before["seq"] + 1) & 0xFFFFFFFF
     usb.read(0xc0, 0xb9, op_val, idx, 64)
+    sleep_ms(initial_wait_ms)
     deadline_ns = time.monotonic_ns() + int(timeout_ms) * 1_000_000
     while time.monotonic_ns() < deadline_ns:
-        sleep_ms(15)
         try:
             after = decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
         except OSError:
+            sleep_ms(80)
             continue
         if after["seq"] == target_seq and not after["pending"]:
             return after
+        sleep_ms(80)
     return decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
 
 
@@ -161,7 +157,7 @@ def execute_request(req, device_path=None):
             val = int(str(req["val"]), 0) & 0xFFFF
             mask = int(str(req.get("mask", "0xffff")), 0) & 0xFFFF
             usb.read(0xc0, 0xb9, 0x0000, val, 64)
-            usb.read(0xc0, 0xb9, 0x0100, mask, 64)
+            usb.read(0xc0, 0xb9, 0x0001, mask, 64)
             res = exec_debug_op(usb, 3, reg)
             return {
                 "ok": res["status"] == 1,
@@ -257,8 +253,8 @@ def execute_request(req, device_path=None):
             gain_reg = int(str(req.get("gain_reg", "0x0000")), 0) & 0xFFFF
             spk_mask = int(str(req.get("spk_mask", 3)), 0) & 3
             usb.read(0xc0, 0xb9, 0x0000, gain_reg, 64)
-            usb.read(0xc0, 0xb9, 0x0100, 0, 64)
-            res = exec_debug_op(usb, (1 << 8) | 9, (spk_mask << 8) | div, timeout_ms=4000)
+            usb.read(0xc0, 0xb9, 0x0001, 0, 64)
+            res = exec_debug_op(usb, (1 << 8) | 9, (spk_mask << 8) | div, timeout_ms=4000, initial_wait_ms=160)
             return {
                 "ok": res["status"] == 1,
                 "div": div,
@@ -269,7 +265,7 @@ def execute_request(req, device_path=None):
             }
 
         if cmd == "synth_stop":
-            res = exec_debug_op(usb, (2 << 8) | 9, 0, timeout_ms=3000)
+            res = exec_debug_op(usb, (2 << 8) | 9, 0, timeout_ms=3000, initial_wait_ms=100)
             return {
                 "ok": res["status"] == 1,
                 "off_mask": f"0x{res['result']:05x}",
@@ -281,7 +277,7 @@ def execute_request(req, device_path=None):
             x = int(str(req["x"]), 0) & 0xFFFF
             y = int(str(req["y"]), 0) & 0xFFFF
             usb.read(0xc0, 0xb9, 0x0000, y, 64)
-            res = exec_debug_op(usb, (0 << 8) | 9, x, timeout_ms=3500)
+            res = exec_debug_op(usb, (0 << 8) | 9, x, timeout_ms=3500, initial_wait_ms=420)
             atrk = jam.decode_atrk(usb.read(0xc0, 0xb8, 0, 0, 64))
             hit_code = res["result"] & 0xFFFF
             hit_kind = "none"
@@ -407,6 +403,7 @@ def serve_daemon(unix_path, tcp_host, tcp_port, device_path=None):
         os.unlink(unix_path)
     unix_srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     unix_srv.bind(unix_path)
+    os.chmod(unix_path, 0o666)
     unix_srv.listen(8)
     unix_srv.setblocking(False)
 

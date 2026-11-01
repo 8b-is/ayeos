@@ -18,6 +18,9 @@ import sys
 import termios
 import time
 import tty
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import capture_board4 as b4
 import capture_tone as ct
 
@@ -63,17 +66,42 @@ def sleep_ms(ms):
 class JamUsb(ct.Usb):
     ALLOWED = ct.Usb.ALLOWED + ((0xc0, 0xb8),)
 
+    def __init__(self, path, seconds):
+        self.path = path
+        super().__init__(path, seconds)
+
+    def reset_reopen(self):
+        try:
+            fcntl.ioctl(self.fd, 21780, 0)
+        except OSError:
+            pass
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+        sleep_ms(550)
+        self.fd = os.open(self.path, os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW)
+
+    def read(self, kind, request, value=0, index=0, length=64):
+        try:
+            return super().read(kind, request, value, index, length)
+        except OSError:
+            self.reset_reopen()
+            return super().read(kind, request, value, index, length)
+
 
 def find_tone_usb_device():
     sys_usb = Path("/sys/bus/usb/devices")
     if not sys_usb.exists():
         return None
+    matches = []
     for entry in sorted(sys_usb.iterdir()):
         vid_p = entry / "idVendor"
         pid_p = entry / "idProduct"
         bcd_p = entry / "bcdDevice"
         bus_p = entry / "busnum"
         dev_p = entry / "devnum"
+        desc_p = entry / "descriptors"
         if not (vid_p.exists() and pid_p.exists() and bcd_p.exists()
                 and bus_p.exists() and dev_p.exists()):
             continue
@@ -83,11 +111,20 @@ def find_tone_usb_device():
             bcd = bcd_p.read_text().strip().lower()
             busnum = int(bus_p.read_text().strip(), 10)
             devnum = int(dev_p.read_text().strip(), 10)
+            if desc_p.exists():
+                raw = desc_p.read_bytes()
+                if len(raw) >= 36 and (raw[:18] != ct.DEVICE or raw[18:36] != b4.CONFIG):
+                    continue
         except OSError:
             continue
         if vid == "18d1" and pid == "4ee0" and bcd == "0562":
-            return f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
-    return None
+            cand = f"/dev/bus/usb/{busnum:03d}/{devnum:03d}"
+            if os.path.exists(cand):
+                matches.append(((busnum, devnum), cand))
+    if not matches:
+        return None
+    matches.sort()
+    return matches[-1][1]
 
 
 def decode_atrk(packet):
@@ -121,16 +158,21 @@ def trigger_and_wait(usb, cmd_value, cmd_index=0, timeout_ms=4000):
     before = decode_atrk(usb.read(0xc0, 0xb8, 0, 0, 64))
     target_plays = before["plays"] + 1
     usb.read(0xc0, 0xb8, cmd_value, cmd_index, 64)
+    # Wait for the single bare-metal CPU to finish tone::play_steps + framebuffer flush
+    # before sending EP0 status polls so the USB 2.0 Hub TT never aborts a split transfer.
+    initial_wait_ms = 2350 if cmd_value == 0x0080 else 420
+    sleep_ms(initial_wait_ms)
     start_ns = time.monotonic_ns()
     deadline_ns = start_ns + int(timeout_ms) * 1_000_000
     while time.monotonic_ns() < deadline_ns:
-        sleep_ms(35)
         try:
             status = decode_atrk(usb.read(0xc0, 0xb8, 0, 0, 64))
         except OSError:
+            sleep_ms(120)
             continue
         if status["plays"] >= target_plays and not status["pending"]:
             return status
+        sleep_ms(120)
     return decode_atrk(usb.read(0xc0, 0xb8, 0, 0, 64))
 
 

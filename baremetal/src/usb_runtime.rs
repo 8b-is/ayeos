@@ -595,6 +595,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                 studio_visible,
                                 tone_gate,
                             );
+                            io.start_faults = fault_count();
                         }
                         let mut trigger = device.control.pending_tracker.take();
                         if trigger.is_none() && studio_visible && kp_idle != 0 && idle_ticks & 0xff == 0 {
@@ -603,6 +604,8 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                 kp_held = kp_held.saturating_add(1);
                                 if kp_held == 64 {
                                     trigger = Some((0x0080, 0));
+                                } else if kp_held == 180 {
+                                    trigger_baremetal_ota_reboot(base, stride);
                                 }
                             } else {
                                 if (3..64).contains(&kp_held) {
