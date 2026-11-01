@@ -256,12 +256,7 @@ pub mod stp_btif_protocol {
     /// Encode a 3-byte `fm_bop_write(addr, val)` instruction (`fm_cmd.c`).
     #[inline]
     pub const fn fm_bop_write(addr: u8, val: u16) -> [u8; 4] {
-        [
-            FM_BOP_WRITE_OP,
-            addr,
-            (val & 0xFF) as u8,
-            (val >> 8) as u8,
-        ]
+        [FM_BOP_WRITE_OP, addr, (val & 0xFF) as u8, (val >> 8) as u8]
     }
 
     /// Encode a 5-byte `fm_bop_udelay(us)` instruction (`fm_cmd.c`).
@@ -480,6 +475,218 @@ impl HqaFrame {
             param0,
         }
     }
+
+    /// Serializes the compact 12-byte header (`magic_no`, `cmd_id`, `length`, `param0`) in little-endian.
+    #[inline]
+    pub const fn encode_le(&self) -> [u8; 12] {
+        let m = self.magic_no.to_le_bytes();
+        let c = self.cmd_id.to_le_bytes();
+        let l = self.length.to_le_bytes();
+        let p = self.param0.to_le_bytes();
+        [
+            m[0], m[1], m[2], m[3], c[0], c[1], l[0], l[1], p[0], p[1], p[2], p[3],
+        ]
+    }
+
+    /// Parses and validates a compact 12-byte little-endian `hqa_frame`.
+    #[inline]
+    pub const fn decode_le(bytes: &[u8; 12]) -> Option<Self> {
+        let magic_no = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        if magic_no != wifi_hqa::TEST_CMD_MAGIC_NO {
+            return None;
+        }
+        let cmd_id = u16::from_le_bytes([bytes[4], bytes[5]]);
+        let length = u16::from_le_bytes([bytes[6], bytes[7]]);
+        let param0 = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+        Some(Self {
+            magic_no,
+            msg_type: wifi_hqa::HQA_TYPE_REQ,
+            cmd_id,
+            length,
+            sequence: 1,
+            param0,
+        })
+    }
+}
+
+/// IEC 62106 RDS generator polynomial `g(x) = x^10 + x^8 + x^7 + x^5 + x^4 + x^3 + 1` (`0x5B9`).
+pub const RDS_CRC_POLY: u16 = 0x05B9;
+/// RDS Block A offset word.
+pub const RDS_OFFSET_A: u16 = 0x00FC;
+/// RDS Block B offset word.
+pub const RDS_OFFSET_B: u16 = 0x0198;
+/// RDS Block C offset word (version A groups).
+pub const RDS_OFFSET_C: u16 = 0x0168;
+/// RDS Block C' offset word (version B groups).
+pub const RDS_OFFSET_C_PRIME: u16 = 0x0350;
+/// RDS Block D offset word.
+pub const RDS_OFFSET_D: u16 = 0x01B4;
+
+/// Computes the 10-bit IEC 62106 RDS CRC checkword XORed with `offset_word`.
+#[inline]
+pub const fn rds_checkword(data: u16, offset_word: u16) -> u16 {
+    let mut crc: u16 = 0;
+    let mut bit = 15i32;
+    while bit >= 0 {
+        let in_bit = (data >> (bit as u32)) & 1;
+        let top = (crc >> 9) & 1;
+        crc = (crc << 1) & 0x03FF;
+        if (top ^ in_bit) != 0 {
+            crc ^= RDS_CRC_POLY & 0x03FF;
+        }
+        bit -= 1;
+    }
+    crc ^ (offset_word & 0x03FF)
+}
+
+/// Packs a 16-bit RDS data word and its 10-bit offset-protected checkword into a 26-bit block.
+#[inline]
+pub const fn rds_encode_block(data: u16, offset_word: u16) -> u32 {
+    let check = rds_checkword(data, offset_word) as u32;
+    ((data as u32) << 10) | (check & 0x03FF)
+}
+
+/// Verifies a 26-bit RDS block against `offset_word`, returning the 16-bit payload if valid.
+#[inline]
+pub const fn rds_verify_block(block26: u32, offset_word: u16) -> Option<u16> {
+    let data = ((block26 >> 10) & 0xFFFF) as u16;
+    let rx_check = (block26 & 0x03FF) as u16;
+    if rds_checkword(data, offset_word) == rx_check {
+        Some(data)
+    } else {
+        None
+    }
+}
+
+/// Encodes a 104-bit RDS Group `0A` (2 characters of the 8-char PS station name).
+#[inline]
+pub const fn rds_build_group_0a(pi: u16, pty: u8, seg: u8, chars: [u8; 2]) -> [u32; 4] {
+    let b: u16 = ((pty as u16 & 0x1F) << 5) | (seg as u16 & 0x03);
+    let c: u16 = 0xE000;
+    let d: u16 = ((chars[0] as u16) << 8) | (chars[1] as u16);
+    [
+        rds_encode_block(pi, RDS_OFFSET_A),
+        rds_encode_block(b, RDS_OFFSET_B),
+        rds_encode_block(c, RDS_OFFSET_C),
+        rds_encode_block(d, RDS_OFFSET_D),
+    ]
+}
+
+/// Encodes a 104-bit RDS Group `2A` (4 characters of the 64-char RadioText bulletin).
+#[inline]
+pub const fn rds_build_group_2a(pi: u16, pty: u8, seg: u8, chars: [u8; 4]) -> [u32; 4] {
+    let b: u16 = (2u16 << 12) | ((pty as u16 & 0x1F) << 5) | (seg as u16 & 0x0F);
+    let c: u16 = ((chars[0] as u16) << 8) | (chars[1] as u16);
+    let d: u16 = ((chars[2] as u16) << 8) | (chars[3] as u16);
+    [
+        rds_encode_block(pi, RDS_OFFSET_A),
+        rds_encode_block(b, RDS_OFFSET_B),
+        rds_encode_block(c, RDS_OFFSET_C),
+        rds_encode_block(d, RDS_OFFSET_D),
+    ]
+}
+
+/// Encodes a 104-bit RDS Group `11A` (4 bytes of an AyeOS Off-Grid RDS Capsule, `seg = 0..8`).
+#[inline]
+pub const fn rds_build_group_11a(pi: u16, pty: u8, seg: u8, chunk: [u8; 4]) -> [u32; 4] {
+    let b: u16 = (11u16 << 12) | ((pty as u16 & 0x1F) << 5) | (seg as u16 & 0x07);
+    let c: u16 = ((chunk[0] as u16) << 8) | (chunk[1] as u16);
+    let d: u16 = ((chunk[2] as u16) << 8) | (chunk[3] as u16);
+    [
+        rds_encode_block(pi, RDS_OFFSET_A),
+        rds_encode_block(b, RDS_OFFSET_B),
+        rds_encode_block(c, RDS_OFFSET_C),
+        rds_encode_block(d, RDS_OFFSET_D),
+    ]
+}
+
+/// Off-Grid IEC 62106 RDS/RBDS Baseband Decoder (`1,187.5 bps`) with Group `0A`/`2A`/`11A` Capsule assembly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RdsDecoder {
+    pub pi_code: u16,
+    pub pty: u8,
+    pub ps_name: [u8; 8],
+    pub radio_text: [u8; 64],
+    pub capsule_buf: [u8; 32],
+    pub capsule_mask: u8,
+    pub groups_decoded: u32,
+}
+
+impl Default for RdsDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RdsDecoder {
+    pub const fn new() -> Self {
+        Self {
+            pi_code: 0,
+            pty: 0,
+            ps_name: [b' '; 8],
+            radio_text: [b' '; 64],
+            capsule_buf: [0u8; 32],
+            capsule_mask: 0,
+            groups_decoded: 0,
+        }
+    }
+
+    /// Verifies and decodes a 104-bit RDS group (`4 x 26-bit` blocks `[A, B, C, D]`).
+    pub fn ingest_raw_group(&mut self, blocks26: [u32; 4]) -> bool {
+        let Some(a) = rds_verify_block(blocks26[0], RDS_OFFSET_A) else {
+            return false;
+        };
+        let Some(b) = rds_verify_block(blocks26[1], RDS_OFFSET_B) else {
+            return false;
+        };
+        let version_b = ((b >> 11) & 1) != 0;
+        let Some(c) = (if version_b {
+            rds_verify_block(blocks26[2], RDS_OFFSET_C_PRIME)
+        } else {
+            rds_verify_block(blocks26[2], RDS_OFFSET_C)
+        }) else {
+            return false;
+        };
+        let Some(d) = rds_verify_block(blocks26[3], RDS_OFFSET_D) else {
+            return false;
+        };
+
+        self.pi_code = a;
+        self.pty = ((b >> 5) & 0x1F) as u8;
+        let group_type = ((b >> 12) & 0x0F) as u8;
+
+        match (group_type, version_b) {
+            (0, false) => {
+                let idx = ((b & 0x03) as usize) * 2;
+                self.ps_name[idx] = (d >> 8) as u8;
+                self.ps_name[idx + 1] = (d & 0xFF) as u8;
+            }
+            (2, false) => {
+                let idx = ((b & 0x0F) as usize) * 4;
+                self.radio_text[idx] = (c >> 8) as u8;
+                self.radio_text[idx + 1] = (c & 0xFF) as u8;
+                self.radio_text[idx + 2] = (d >> 8) as u8;
+                self.radio_text[idx + 3] = (d & 0xFF) as u8;
+            }
+            (11, false) => {
+                let seg = (b & 0x07) as usize;
+                let idx = seg * 4;
+                self.capsule_buf[idx] = (c >> 8) as u8;
+                self.capsule_buf[idx + 1] = (c & 0xFF) as u8;
+                self.capsule_buf[idx + 2] = (d >> 8) as u8;
+                self.capsule_buf[idx + 3] = (d & 0xFF) as u8;
+                self.capsule_mask |= 1u8 << seg;
+            }
+            _ => {}
+        }
+        self.groups_decoded = self.groups_decoded.wrapping_add(1);
+        true
+    }
+
+    #[inline]
+    pub const fn capsule_complete(&self) -> bool {
+        self.capsule_mask == 0xFF
+    }
 }
 
 /// Integer FM Tuner (`650..=1080` in 100 kHz steps) & IEC 62106 RDS decoder state.
@@ -608,9 +815,7 @@ impl WavePool64x36 {
         for &s in pcm_768k {
             e += (s as i64).abs();
         }
-        self.energy_accum = self
-            .energy_accum
-            .wrapping_add(e * (snr_db.max(1) as i64));
+        self.energy_accum = self.energy_accum.wrapping_add(e * (snr_db.max(1) as i64));
         self.frames_injected = self.frames_injected.wrapping_add(1);
     }
 }
@@ -630,7 +835,7 @@ pub fn catmull_rom_upsample_16x(p0: i16, p1: i16, p2: i16, p3: i16) -> [i16; 16]
 
     for (step, slot) in out.iter_mut().enumerate() {
         let t = step as i64; // 0..15 in units of 1/16
-        // Horner evaluation over denominator 2 * 16^3 = 8192:
+                             // Horner evaluation over denominator 2 * 16^3 = 8192:
         let num = ((a0 * t + (a1 << 4)) * t + (a2 << 8)) * t + (a3 << 12);
         let val = (num + 4096) >> 13;
         *slot = val.clamp(-32767, 32767) as i16;
@@ -638,11 +843,12 @@ pub fn catmull_rom_upsample_16x(p0: i16, p1: i16, p2: i16, p3: i16) -> [i16; 16]
     out
 }
 
-/// Unified `MT6631` controller combining `ConnsysGate`, `FmTuner`, `WmtPatchManifest`, `AfeFmRoute`, and `WavePool64x36`.
+/// Unified `MT6631` controller combining `ConnsysGate`, `FmTuner`, `RdsDecoder`, `WmtPatchManifest`, `AfeFmRoute`, and `WavePool64x36`.
 #[derive(Debug, Clone, Default)]
 pub struct Mt6631Controller {
     pub gate: ConnsysGate,
     pub fm: FmTuner,
+    pub rds: RdsDecoder,
     pub wmt_manifest: WmtPatchManifest,
     pub afe_route: AfeFmRoute,
     pub wave_pool: WavePool64x36,
@@ -655,6 +861,7 @@ impl Mt6631Controller {
         Self {
             gate: ConnsysGate::new(),
             fm: FmTuner::new(),
+            rds: RdsDecoder::new(),
             wmt_manifest: WmtPatchManifest {
                 wifi_ram_code_loaded: false,
                 wmt_mcu_patch_loaded: false,
@@ -684,6 +891,31 @@ impl Mt6631Controller {
         self.fm.rds_ps = *b"AYE-99.5";
         let msg = b"FROM SYRIA TO REYKJAVIK * AYE.IS SOVEREIGN SANCTUARY 432HZ";
         self.fm.rds_rt[..msg.len()].copy_from_slice(msg);
+
+        // Also populate IEC 62106 CRC-10 verified RDS 0A, 2A, and 11A off-grid capsule blocks
+        let pi = 0x8B15;
+        let pty = 31;
+        let ps = *b"AYE-99.5";
+        let mut seg = 0u8;
+        while seg < 4 {
+            let i = (seg as usize) * 2;
+            let _ = self
+                .rds
+                .ingest_raw_group(rds_build_group_0a(pi, pty, seg, [ps[i], ps[i + 1]]));
+            seg += 1;
+        }
+        let cap = *b"AYE540:MT6631:0x18142880:READY!!";
+        let mut cseg = 0u8;
+        while cseg < 8 {
+            let i = (cseg as usize) * 4;
+            let _ = self.rds.ingest_raw_group(rds_build_group_11a(
+                pi,
+                pty,
+                cseg,
+                [cap[i], cap[i + 1], cap[i + 2], cap[i + 3]],
+            ));
+            cseg += 1;
+        }
     }
 }
 
@@ -765,5 +997,19 @@ mod tests {
         assert!(ctrl.gate.can_touch_mmio());
         assert!(ctrl.afe_route.enabled);
         assert_eq!(ctrl.afe_route.connsys_i2s_con_addr, 0x1122_0C78);
+    }
+
+    #[test]
+    fn rds_crc10_syndrome_and_group_11a_capsule_verify_cleanly() {
+        let mut ctrl = poll_mt6631_v540(true, 0);
+        assert_eq!(ctrl.rds.pi_code, 0x8B15);
+        assert_eq!(&ctrl.rds.ps_name, b"AYE-99.5");
+        assert!(ctrl.rds.capsule_complete());
+        assert_eq!(&ctrl.rds.capsule_buf, b"AYE540:MT6631:0x18142880:READY!!");
+
+        // Flip 1 bit in Block A and verify CRC-10 syndrome rejects the corrupted group
+        let mut corrupted = rds_build_group_0a(0x8B15, 31, 0, *b"OK");
+        corrupted[0] ^= 0x0001;
+        assert!(!ctrl.rds.ingest_raw_group(corrupted));
     }
 }
