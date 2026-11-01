@@ -8,9 +8,9 @@
 //! 2. Initializes `MT6768_UART0` (`0x1100_2000`) and streams live telemetry.
 //! 3. Discovers the physical `720 × 1640` (`BGRA8888` / `RGBA8888`) framebuffer initialized
 //!    by MediaTek `lk` via the Device Tree Blob (`FDT` in `x0`) and `DISP_OVL0_L0_ADDR` (`0x1400_70F4`).
-//! 4. Runs the zero-float **768 kHz 16× Catmull-Rom PhoeniX Synthesizer**, **79-Byte `MEM|8`
-//!    `WaveInt` Lattice**, and **Exact `p/q` Rational Engine** directly on the ARMv8-A silicon,
-//!    rendering a live 120 Hz Sovereign Graphical HUD with an embedded 8×8 pixel font!
+//! 4. Renders Constellation Studio with an embedded bitmap font and integer artwork.
+//!    Radio, camera, speech and network capabilities are not established by this UI.
+//!    This development build has not been verified on the phone.
 
 #![no_std]
 #![no_main]
@@ -18,6 +18,280 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
+
+mod dashboard;
+#[cfg(feature = "board-report")]
+mod device_tree;
+#[cfg(feature = "board-report")]
+mod board_screen;
+#[cfg(feature = "board-report")]
+mod board_pages;
+#[cfg(feature = "usb-report")]
+mod usb_control;
+#[cfg(feature = "usb-report")]
+mod usb_board;
+#[cfg(feature = "usb-report")]
+mod usb_phy;
+#[cfg(feature = "usb-report")]
+mod usb_status;
+#[cfg(feature = "audio-report")]
+mod audio_board;
+#[cfg(feature = "audio-report")]
+mod audio_probe;
+#[cfg(feature = "board6-report")]
+mod pmic_probe;
+#[cfg(feature = "board6-report")]
+mod board6;
+
+// Written by the exception vector; Board4 uses it to stop after skipped faults.
+#[no_mangle]
+static mut AYEOS_FAULT_COUNT: u64 = 0;
+#[cfg(feature = "usb-report")]
+include!("usb_runtime.rs");
+
+struct PhoneCanvas {
+    base: usize,
+    stride: usize,
+}
+
+/// Read only the FDT passed by the bootloader. The boot ABI must provide a
+/// readable contiguous blob; address/size checks cannot establish that mapping.
+/// Never log chosen/bootargs, credentials or arbitrary device-tree property data.
+#[cfg(feature = "board-report")]
+fn report_board(address: u64) {
+    use device_tree::Event;
+    uart_puts("AYEOS-BOARD BEGIN schema=1 build=studio-board-report\n");
+    if address < 0x4000_0000 || address > 0xFFFF_FFD8 || address & 3 != 0 {
+        uart_puts("AYEOS-BOARD ERROR boot-pointer\n");
+        return;
+    }
+    let base = address as usize;
+    let magic = u32::from_be(unsafe { read_volatile(base as *const u32) });
+    let size = u32::from_be(unsafe { read_volatile((base + 4) as *const u32) }) as usize;
+    if magic != 0xD00D_FEED || !(40..=device_tree::MAX_BYTES).contains(&size)
+        || address + size as u64 > 0x1_0000_0000 {
+        uart_puts("AYEOS-BOARD ERROR header\n");
+        return;
+    }
+    let blob = unsafe { core::slice::from_raw_parts(base as *const u8, size) };
+    if device_tree::walk(blob, |_| {}).is_err() {
+        uart_puts("AYEOS-BOARD ERROR malformed-fdt\n");
+        return;
+    }
+    let mut records = 0usize;
+    let mut omitted = false;
+    let mut names = [""; 32];
+    let mut depth = 0usize;
+    let mut hex = [0u8; 18];
+    let result = device_tree::walk(blob, |event| {
+        pet_mediatek_watchdog();
+        match event {
+            Event::Begin(name) => { names[depth] = name; depth += 1; }
+            Event::End => { depth -= 1; }
+            Event::Property(name, value) => {
+                if !matches!(name, "compatible" | "reg" | "status" | "clocks" | "clock-names"
+                    | "interrupts" | "interrupt-parent" | "phandle" | "#address-cells"
+                    | "#size-cells" | "ranges" | "dmas" | "dma-names" | "pinctrl-0") { return; }
+                if records == 1024 { omitted = true; return; }
+                records += 1;
+                uart_puts("AYEOS-BOARD path=");
+                for part in &names[..depth] { uart_puts(part); uart_puts("/"); }
+                uart_puts(" property="); uart_puts(name); uart_puts(" bytes=");
+                uart_puts(format_u64_hex(value.len() as u64, &mut hex));
+                uart_puts(" hex=");
+                for byte in value.iter().take(128) {
+                    uart_putc(b"0123456789abcdef"[(byte >> 4) as usize]);
+                    uart_putc(b"0123456789abcdef"[(byte & 15) as usize]);
+                }
+                if value.len() > 128 { uart_puts(" [truncated]"); }
+                uart_puts("\n");
+            }
+        }
+    });
+    if result.is_err() { uart_puts("AYEOS-BOARD ERROR changed-fdt\n"); }
+    else if omitted { uart_puts("AYEOS-BOARD END record-limit\n"); }
+    else { uart_puts("AYEOS-BOARD END parsed-not-hardware-verified\n"); }
+}
+
+impl dashboard::Canvas for PhoneCanvas {
+    fn pixel(&mut self, x: usize, y: usize, color: u32) {
+        put_pixel(self.base, self.stride, x, y, color);
+    }
+}
+
+#[cfg(feature = "board-report")]
+fn clear_board_page(base: usize, stride: usize) {
+    for y in 0..SCREEN_H {
+        for x in 0..SCREEN_W { put_pixel(base, stride, x, y, 0xFF05060A); }
+        pet_mediatek_watchdog();
+    }
+}
+
+#[cfg(feature = "board-report")]
+fn board_line(base: usize, stride: usize, row: usize, text: &str) {
+    if row < 85 {
+        draw_text_opaque_scaled(base, stride, 20, 68 + row * 18, 1,
+            text, 0xFF62E6C9, 0xFF05060A, 76);
+    }
+    pet_mediatek_watchdog();
+}
+
+#[cfg(feature = "board-report")]
+fn screen_board(address: u64, base: usize, stride: usize) -> ! {
+    use core::fmt::Write;
+    clear_board_page(base, stride);
+    let mut row = 0usize;
+    let mut emit = |text: &str| {
+        board_line(base, stride, row, text); row += 1;
+        flush_dcache_range(base, stride * SCREEN_H * 4);
+    };
+    emit("AYEOS 5.4.0-studio-board3 / PAGED RESOURCE REPORT");
+    let mut line = board_screen::Line::new();
+    let _ = write!(line, "Entry x0={:016x} framebuffer={:016x} stride={}", address, base, stride);
+    emit(line.text());
+    emit("Memory readability requires bootloader ABI; faults are not validation.");
+    emit("Stage: checking FDT header (if stuck here, report this photograph)");
+    emit("Release all volume keys while the keypad baseline is sampled.");
+    if address < 0x4000_0000 || address > 0xFFFF_FFD8 || address & 7 != 0 {
+        emit("FDT POINTER REJECTED: range or 8-byte alignment");
+    } else {
+        // The inherited boot environment must map this contiguous memory.
+        // Numeric bounds cannot prove that contract or recover skipped loads.
+        let magic = u32::from_be(unsafe { read_volatile(address as *const u32) });
+        let size = u32::from_be(unsafe { read_volatile((address + 4) as *const u32) }) as usize;
+        let mut line = board_screen::Line::new();
+        let _ = write!(line, "FDT magic={:08x} totalsize={} bytes", magic, size);
+        emit(line.text());
+        if magic != 0xD00D_FEED || !(40..=device_tree::MAX_BYTES).contains(&size)
+            || address + size as u64 > 0x1_0000_0000 {
+            emit("FDT HEADER REJECTED");
+        } else {
+            emit("Stage: parsing bounded FDT");
+            let blob = unsafe { core::slice::from_raw_parts(address as *const u8, size) };
+            match board_pages::Inventory::build(blob) {
+                Ok(inventory) => {
+                    let (pages, capped) = inventory.page_count(blob);
+                    // The inherited keypad read returns zero on a skipped fault.
+                    // Treat zero/unstable calibration as unavailable, not success.
+                    let mut idle = safe_mmio_read16(KP_MEM1_ADDR);
+                    let mut stable = 0usize;
+                    for _ in 0..256 {
+                        pet_mediatek_watchdog(); frame_pacer_30hz();
+                        let sample = safe_mmio_read16(KP_MEM1_ADDR);
+                        if sample == idle && sample != 0 { stable += 1; }
+                        else { idle = sample; stable = 0; }
+                        if stable == 32 { break; }
+                    }
+                    if stable != 32 { idle = 0; }
+                    let mut key = board_pages::PageKey::new(idle);
+                    let mut page = 0;
+                    loop {
+                        clear_board_page(base, stride);
+                        board_line(base, stride, 0, "AYEOS 5.4.0-studio-board3 / PAGED RESOURCE REPORT");
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "PAGE {}/{} FDT bytes={} CRC32={:08x}", page + 1, pages, size, inventory.crc);
+                        board_line(base, stride, 1, line.text());
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "x0={:016x} framebuffer={:016x} stride={}", address, base, stride);
+                        board_line(base, stride, 2, line.text());
+                        board_line(base, stride, 3, "FDT PARSE OK - declarations; peripheral operation remains unverified");
+                        board_line(base, stride, 4, "HEX: R=record ID, +byte offset; CRC32 detects transcription errors");
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "Node overflow={} provider overflow={} duplicate handles={}",
+                            inventory.node_overflow, inventory.provider_overflow, inventory.duplicate_handles);
+                        board_line(base, stride, 5, line.text());
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "Unresolved={} malformed refs={} line cap={}", inventory.unresolved, inventory.malformed_refs, capped);
+                        board_line(base, stride, 6, line.text());
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "Keypad baseline={:04x}; boot mapping/read assumptions still apply", idle);
+                        board_line(base, stride, 7, line.text());
+                        board_line(base, stride, 8, "--------------------------------------------------------------------");
+                        let mut data_row = 9;
+                        inventory.render(blob, page, |text| {
+                            board_line(base, stride, data_row, text); data_row += 1;
+                        });
+                        let mut line = board_screen::Line::new();
+                        let _ = write!(line, "END PAGE {}/{} - photograph header, data and this footer", page + 1, pages);
+                        board_line(base, stride, 78, line.text());
+                        board_line(base, stride, 79, if idle == 0 { "Keypad unavailable: report this page; no automatic page advance" }
+                            else { "Hold a volume key briefly, then release: next page (wraps at end)" });
+                        board_line(base, stride, 80, "HOLD - no USB/radio/updater calls; key reads and watchdog only");
+                        flush_dcache_range(base, stride * SCREEN_H * 4);
+                        loop {
+                            pet_mediatek_watchdog(); frame_pacer_30hz();
+                            if key.sample(safe_mmio_read16(KP_MEM1_ADDR)) {
+                                page = if page + 1 == pages { 0 } else { page + 1 };
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    let mut line = board_screen::Line::new();
+                    let _ = write!(line, "FDT PARSE FAILED: {:?}", error); emit(line.text());
+                }
+            }
+        }
+    }
+    emit("HOLD - watchdog only; no USB polling or button actions");
+    loop { pet_mediatek_watchdog(); core::hint::spin_loop(); }
+}
+
+/// Evidence-first studio UI. Hardware bring-up remains experimental; only the
+/// render-loop counter is telemetry. Artwork is explicitly labelled as a demo.
+#[no_mangle]
+pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
+    pet_mediatek_watchdog();
+    let (base, stride) = discover_lk_framebuffer(dtb_phys_addr);
+    clear_lk_boot_overlays(base, stride * SCREEN_H * 4);
+    #[cfg(feature = "usb-report")]
+    screen_usb(dtb_phys_addr, base, stride);
+    #[cfg(all(feature = "board-report", not(feature = "usb-report")))]
+    screen_board(dtb_phys_addr, base, stride);
+    let mut canvas = PhoneCanvas { base, stride };
+    let mut frame = 0u64;
+    let mut moving = false;
+    let mut pending_addr = 0u8;
+    let mut idle = safe_mmio_read16(KP_MEM1_ADDR);
+    let mut stable = 0u32;
+    let mut held = 0u32;
+    dashboard::paint(&mut canvas, glyph_8x16_hd, moving);
+    uart_puts("AYEOS 5.4 STUDIO PREVIEW: artwork is simulated; radio/camera/speech unverified\n");
+    loop {
+        pet_mediatek_watchdog();
+        frame = frame.wrapping_add(1);
+        // The preview does not initialize or sample the legacy audio/radio path.
+        if poll_usb_ota_switch(frame, &mut pending_addr, None) {
+            trigger_baremetal_ota_reboot(base, stride);
+        }
+        let key = safe_mmio_read16(KP_MEM1_ADDR);
+        if frame <= 20 {
+            idle = key;
+        } else if key == idle {
+            stable = stable.saturating_add(1);
+            held = 0;
+        } else if stable >= 6 {
+            if held == 0 {
+                moving = !moving;
+                dashboard::paint(&mut canvas, glyph_8x16_hd, moving);
+            }
+            held = held.saturating_add(1);
+            if held >= 24 {
+                trigger_baremetal_ota_reboot(base, stride);
+            }
+        }
+        if moving && frame & 7 == 0 {
+            dashboard::artwork(&mut canvas, (frame & 255) as u16);
+        }
+        if frame & 31 == 0 {
+            dashboard::counter(&mut canvas, glyph_8x16_hd, frame);
+        }
+        flush_dcache_range(base, stride * SCREEN_H * 4);
+        // Existing instruction-count delay; deliberately no measured FPS claim.
+        frame_pacer_30hz();
+    }
+}
 
 // ── 64-Byte ARM64 Linux/LK Boot Header + Reset Vector (`_head` / `_start`) ──
 core::arch::global_asm!(
@@ -96,6 +370,13 @@ _exception_vectors:
     .endr
 
 _skip_faulting_insn:
+    stp     x9, x10, [sp, #-16]!
+    adrp    x9, AYEOS_FAULT_COUNT
+    add     x9, x9, :lo12:AYEOS_FAULT_COUNT
+    ldr     x10, [x9]
+    add     x10, x10, #1
+    str     x10, [x9]
+    ldp     x9, x10, [sp], #16
     stp     x29, x30, [sp, #-16]!
     mrs     x29, CurrentEL
     lsr     x29, x29, #2
@@ -415,7 +696,8 @@ const AYEOS_USB_CFG_DESC: [u8; 18] = [
 /// - Keeps D+ pull-up (`SOFTCONN = 0x40 | HSENAB = 0x20`) active on `MUSB_POWER`.
 /// - Answers `GET_DESCRIPTOR (Device & Config)` + `SET_CONFIGURATION` on Endpoint 0 so Linux enumerates cleanly.
 /// - Returns `true` ONLY when the laptop sends explicit Vendor Request `0xA8` (`ayeOS Remote OTA Reset`).
-fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8, diag: &StudioBoard5Diag) -> bool {
+// None means no hardware diagnostic was collected; never fabricate a report.
+fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8, diag: Option<&StudioBoard5Diag>) -> bool {
     if frame_no == 1 {
         // Ensure USB 2.0 High-Speed + D+ Soft-Connect pull-up is asserted
         safe_mmio_write8(MUSB_POWER, 0x60);
@@ -454,14 +736,19 @@ fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8, diag: &StudioBoard5
         }
         // Magic AyeOS Live Version Query (`bmRequestType == 0xC0`, `bRequest == 0xA9`)
         if bm_req_type == 0xC0 && b_request == 0xA9 {
-            safe_mmio_write16(MUSB_CSR0, 0x0040); // SERVICED_RXPKTRDY
             if w_value == 0x0005 {
+                let Some(diag) = diag else {
+                    safe_mmio_write16(MUSB_CSR0, 0x0060); // SERVICED_RXPKTRDY | SENDSTALL
+                    return false;
+                };
+                safe_mmio_write16(MUSB_CSR0, 0x0040);
                 let ascii = diag.pack_ascii_64();
                 let len = (w_length as usize).min(ascii.len());
                 for &byte in &ascii[..len] {
                     safe_mmio_write8(MUSB_FIFO0, byte);
                 }
             } else {
+                safe_mmio_write16(MUSB_CSR0, 0x0040);
                 let len = (w_length as usize).min(AYEOS_USB_VER_PAYLOAD.len());
                 for &byte in &AYEOS_USB_VER_PAYLOAD[..len] {
                     safe_mmio_write8(MUSB_FIFO0, byte);
@@ -472,6 +759,10 @@ fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8, diag: &StudioBoard5
         }
         // Studio-Board5 Binary 64-byte Diagnostic Report (`bmRequestType == 0xC0`, `bRequest == 0xAA` or `0xA5`)
         if bm_req_type == 0xC0 && (b_request == 0xAA || b_request == 0xA5) {
+            let Some(diag) = diag else {
+                safe_mmio_write16(MUSB_CSR0, 0x0060); // SERVICED_RXPKTRDY | SENDSTALL
+                return false;
+            };
             safe_mmio_write16(MUSB_CSR0, 0x0040); // SERVICED_RXPKTRDY
             let pkt = diag.pack_binary_64(frame_no);
             let len = (w_length as usize).min(pkt.len());
@@ -483,6 +774,10 @@ fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8, diag: &StudioBoard5
         }
         // Studio-Board5 ASCII 64-byte Diagnostic Report (`bmRequestType == 0xC0`, `bRequest == 0xAB`)
         if bm_req_type == 0xC0 && b_request == 0xAB {
+            let Some(diag) = diag else {
+                safe_mmio_write16(MUSB_CSR0, 0x0060); // SERVICED_RXPKTRDY | SENDSTALL
+                return false;
+            };
             safe_mmio_write16(MUSB_CSR0, 0x0040); // SERVICED_RXPKTRDY
             let ascii = diag.pack_ascii_64();
             let len = (w_length as usize).min(ascii.len());
@@ -757,6 +1052,8 @@ const fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
 /// Crisp 8×16 HD+ mixed-case bitmap font (`A..Z`, distinct lowercase `a..z`, `0..9`, and symbols).
 const fn glyph_8x16_hd(ch: u8) -> [u8; 16] {
     match ch {
+        b'@' => [0, 0, 0x3C, 0x66, 0x6E, 0x6A, 0x6A, 0x6E, 0x60, 0x3C, 0, 0, 0, 0, 0, 0],
+        b'~' => [0, 0, 0, 0, 0x32, 0x7C, 0x4C, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         b'A' => [0x00, 0x00, 0x18, 0x3C, 0x66, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00],
         b'B' => [0x00, 0x00, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x7C, 0x00, 0x00, 0x00, 0x00],
         b'C' => [0x00, 0x00, 0x3C, 0x66, 0x62, 0x60, 0x60, 0x60, 0x60, 0x62, 0x66, 0x3C, 0x00, 0x00, 0x00, 0x00],
@@ -1580,8 +1877,10 @@ fn compute_baremetal_image_seal() -> u64 {
     hash
 }
 
-#[no_mangle]
-pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
+// Retained as source-only audit evidence for the shipped 5.4 dashboard.
+// Its synthetic camera/ASR/RDS values must never be presented as telemetry.
+#[cfg(any())]
+fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     init_mt6358_audio_pwrap();
     let mut board5_diag = init_studio_board5_afe_smartpa_connsys();
@@ -1897,7 +2196,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
         if (frame_no & 31) == 1 {
             refresh_studio_board5_diag(&mut board5_diag);
         }
-        if poll_usb_ota_switch(frame_no, &mut usb_pending_addr, &board5_diag) {
+        if poll_usb_ota_switch(frame_no, &mut usb_pending_addr, Some(&board5_diag)) {
             trigger_baremetal_ota_reboot(fb_base, stride_px);
         }
 

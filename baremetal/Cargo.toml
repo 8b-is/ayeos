@@ -4,6 +4,12 @@ version = "5.5.0"
 edition = "2021"
 description = "100% Bare-Metal #![no_std] #![no_main] Rust Kernel for BLU G75 (MediaTek Helio G81 / mt6768) — Zero Linux, Zero C, Zero Floats."
 
+[features]
+board-report = []
+usb-report = ["board-report"]
+audio-report = ["usb-report"]
+board6-report = ["audio-report"]
+
 [profile.release]
 opt-level = "z"
 lto = true
