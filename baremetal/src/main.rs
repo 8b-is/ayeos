@@ -20,6 +20,16 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 mod dashboard;
+#[cfg(feature = "alpha-report")]
+mod diagnostics;
+#[cfg(feature = "alpha-report")]
+mod marine_fixture;
+#[cfg(feature = "alpha-report")]
+include!("alpha_runtime.rs");
+#[cfg(feature = "alpha-report")]
+core::arch::global_asm!(include_str!("alpha_start.S"));
+#[cfg(feature = "alpha-report")]
+core::arch::global_asm!(include_str!("faults.S"));
 #[cfg(feature = "board-report")]
 mod device_tree;
 #[cfg(feature = "board-report")]
@@ -242,8 +252,12 @@ fn screen_board(address: u64, base: usize, stride: usize) -> ! {
 /// render-loop counter is telemetry. Artwork is explicitly labelled as a demo.
 #[no_mangle]
 pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
+    #[cfg(feature = "alpha-report")]
+    alpha_event(1, 0, dtb_phys_addr);
     pet_mediatek_watchdog();
     let (base, stride) = discover_lk_framebuffer(dtb_phys_addr);
+    #[cfg(feature = "alpha-report")]
+    alpha_screen_ready(base, stride);
     clear_lk_boot_overlays(base, stride * SCREEN_H * 4);
     #[cfg(feature = "usb-report")]
     screen_usb(dtb_phys_addr, base, stride);
@@ -294,6 +308,7 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
 }
 
 // ── 64-Byte ARM64 Linux/LK Boot Header + Reset Vector (`_head` / `_start`) ──
+#[cfg(not(feature = "alpha-report"))]
 core::arch::global_asm!(
     r#"
     .section .head.text, "ax"
@@ -455,6 +470,7 @@ fn flush_dcache_range(_start: usize, _len: usize) {
 }
 
 #[inline(always)]
+#[cfg(not(feature = "alpha-report"))]
 fn safe_mmio_read32(addr: usize) -> u32 {
     let val: u32;
     unsafe {
@@ -470,6 +486,7 @@ fn safe_mmio_read32(addr: usize) -> u32 {
 }
 
 #[inline(always)]
+#[cfg(not(feature = "alpha-report"))]
 fn safe_mmio_read16(addr: usize) -> u16 {
     let val: u32;
     unsafe {
@@ -485,6 +502,7 @@ fn safe_mmio_read16(addr: usize) -> u16 {
 }
 
 #[inline(always)]
+#[cfg(not(feature = "alpha-report"))]
 fn safe_mmio_read8(addr: usize) -> u8 {
     let val: u32;
     unsafe {
@@ -500,6 +518,7 @@ fn safe_mmio_read8(addr: usize) -> u8 {
 }
 
 #[inline(always)]
+#[cfg(not(feature = "alpha-report"))]
 fn safe_mmio_write8(addr: usize, val: u8) {
     unsafe {
         asm!(
@@ -512,6 +531,7 @@ fn safe_mmio_write8(addr: usize, val: u8) {
 }
 
 #[inline(always)]
+#[cfg(not(feature = "alpha-report"))]
 fn safe_mmio_write16(addr: usize, val: u16) {
     unsafe {
         asm!(
@@ -524,6 +544,7 @@ fn safe_mmio_write16(addr: usize, val: u16) {
 }
 
 #[inline(always)]
+#[cfg(not(feature = "alpha-report"))]
 fn safe_mmio_write32(addr: usize, val: u32) {
     unsafe {
         asm!(
@@ -2762,6 +2783,9 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    #[cfg(feature = "alpha-report")]
+    alpha_panic(_info);
+    #[cfg(not(feature = "alpha-report"))]
     loop {
         pet_mediatek_watchdog();
         unsafe {

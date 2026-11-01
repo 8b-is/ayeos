@@ -1,5 +1,8 @@
 # ayeOS · 0.2.0
 
+Phone development: [audio alpha1 — instrumented foundation](docs/AUDIO_ALPHA1.md)
+(bare-metal diagnostics and real Marine reference self-test; handset validation pending).
+
 **Ternary matrix inference daemon. Part of the 8b-is mesh.**
 
 **[GitHub Pages](https://8b-is.github.io/ayeos/)** | [CRATE](https://crates.io/) | [MEMNET](https://github.com/8b-is/8b-public-documents/tree/main/ayeos)

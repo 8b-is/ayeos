@@ -50,6 +50,13 @@ jobs:
           "$output/board6"
       - name: Python capture tests
         run: python3 -m unittest discover -s scripts -p 'test_capture_board*.py' -v
+      - name: Install architectural test tools
+        run: |
+          rustup target add aarch64-unknown-none
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm
+      - name: Alpha Marine, wire and exception checks
+        run: TMPDIR=/tmp bash scripts/check_alpha.sh
 
   baremetal_build:
     name: Bare-metal build (${{ matrix.label }})
@@ -68,6 +75,8 @@ jobs:
             features: audio-report
           - label: board6
             features: board6-report
+          - label: audio-alpha1
+            features: alpha-report
     steps:
       - uses: actions/checkout@v4
       - name: Install bare-metal target
