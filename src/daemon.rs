@@ -1,5 +1,6 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -53,7 +54,10 @@ fn main() {
     // AyeFire covenant — ayeosd serves MEMNET on a local UNIX socket, no IP.
     // Path: $AYEOSD_SOCK, default /tmp/ayeosd.sock (same default hf-mac dials).
     let sock_path = std::env::var("AYEOSD_SOCK").unwrap_or_else(|_| "/tmp/ayeosd.sock".to_string());
-    remove_stale_socket(&sock_path);
+    if let Err(e) = remove_stale_socket(&sock_path) {
+        eprintln!("ayeosd: failed to prepare unix socket {sock_path}: {e}");
+        std::process::exit(1);
+    }
     let unix_listener = match UnixListener::bind(&sock_path) {
         Ok(l) => l,
         Err(e) => {
@@ -186,7 +190,7 @@ fn main() {
             cmd => println!("unknown: {cmd}"),
         }
     }
-    // Stdio stdin closed; park the main thread — TCP listener keeps serving.
+    // Stdio stdin closed; park the main thread — listeners keep serving.
     loop {
         thread::park();
     }
@@ -197,19 +201,43 @@ fn sparsity(m: &TernaryMatrix) -> f64 {
     zeros as f64 / (m.dim * m.dim) as f64 * 100.0
 }
 
-/// Drop a stale socket file left by a dead daemon; refuse to start if one is live.
-fn remove_stale_socket(path: &str) {
-    if std::fs::metadata(path).is_err() {
-        return;
+/// Remove only a refused stream socket; preserve other paths and connection errors.
+fn remove_stale_socket(path: &str) -> io::Result<()> {
+    let original = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if !original.file_type().is_socket() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "refusing to replace a non-socket path (including symlinks)",
+        ));
     }
     match UnixStream::connect(path) {
-        Ok(_) => {
-            eprintln!("ayeosd: another daemon is already listening on {path}");
-            std::process::exit(1);
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::AddrInUse,
+            "another daemon is already listening",
+        )),
+        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
+            // Catch replacement during the probe. This is not a lock against
+            // concurrent directory writers; the caller must own its socket path.
+            let current = match std::fs::symlink_metadata(path) {
+                Ok(metadata) => metadata,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(e) => return Err(e),
+            };
+            if !current.file_type().is_socket()
+                || (current.dev(), current.ino()) != (original.dev(), original.ino())
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "socket path changed during stale-socket check",
+                ));
+            }
+            std::fs::remove_file(path)
         }
-        Err(_) => {
-            let _ = std::fs::remove_file(path);
-        }
+        Err(e) => Err(e),
     }
 }
 

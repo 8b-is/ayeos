@@ -40,6 +40,10 @@ cargo run --bin ayeosd
 # legacy IP listener: AYEOSD_TCP=9876 cargo run --bin ayeosd
 ```
 
+Startup recovers stale UNIX stream sockets after a refused connection. It refuses
+live listeners, ordinary files, directories, symlinks and other connection errors;
+cleanup errors are reported. Use a socket path in a directory you control.
+
 ## MEMNET
 
 The MEMNET protocol replaces static IP addressing with intent-based resolution:
