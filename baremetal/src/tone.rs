@@ -723,6 +723,25 @@ pub fn play_steps(
     b.arm(true);
     let result = (|| -> Result<()> {
         startup_route(b, &mut r)?;
+        if r.count > EVENTS - 64 {
+            r.count = 0;
+        }
+        // Enable audio XO buffer, dual SDM (0xcfa1), HS/RCV (0x2414), and HPL/HPR (0x2408/0x240a)
+        // in addition to LOL (0x2416) so both top (0x59) and bottom (0x58) speakers receive signal.
+        for (reg, mask, v) in [
+            (0x239e, 0x0400, 0x0400),
+            (0x2296, 0xffff, 0xcfa1),
+            (0x2410, 0x0047, 0x0000),
+            (0x240c, 0xffff, 0xc033),
+            (0x2414, 0xffff, 0x0093),
+            (0x248e, 0x001f, 0x0000),
+            (0x2414, 0x000c, 0x0008),
+            (0x248c, 0x0f9f, 0x0000),
+            (0x2408, 0x3fff, 0x3aff),
+            (0x240a, 0x00ff, 0x0003),
+        ] {
+            update(b, &mut r, reg, mask, v)?;
+        }
         r.phase = 2;
         r.opened = deadline(b, r.start)?;
         for (idx, step) in steps.iter().enumerate() {
@@ -735,6 +754,7 @@ pub fn play_steps(
             let gain = step.gain_reg & 0x0f9f;
             let mask = if step.spk_mask & 3 == 0 { 3 } else { step.spk_mask & 3 };
             update(b, &mut r, 0x248a, 0x0f9f, gain)?;
+            update(b, &mut r, 0x248c, 0x0f9f, gain)?;
             update(b, &mut r, 0x22c2, 0xffff, div)?;
             for (bit, addr) in [(1u8, 0x58u8), (2u8, 0x59u8)] {
                 let sysctrl = if mask & bit != 0 { 0x3f } else { 0 };
@@ -762,14 +782,133 @@ pub fn play_steps(
         }
         Ok(())
     })();
-    if r.count > EVENTS - 64 {
+    if r.count > EVENTS - 80 {
         r.count = 0;
     }
     r.error = result.err().map_or(0, |e| e as u32);
+    r.phase = 3;
+    for (reg, mask, v) in [
+        (0x240a, 0xffff, 0),
+        (0x2408, 0xfff9, 0),
+        (0x2414, 0xffff, 0),
+        (0x240c, 0xffff, 0),
+        (0x248c, 0xffff, 0x0f9f),
+        (0x248e, 0x001f, 0x001f),
+        (0x239e, 0x0400, 0),
+    ] {
+        if update(b, &mut r, reg, mask, v).is_err() {
+            r.cleanup_errors += 1;
+        }
+    }
+    if r.count > EVENTS - 64 {
+        r.count = 0;
+    }
     shutdown(b, &mut r);
     r.outcome = if !r.verified_off() {
         4
     } else if r.error != 0 || r.cleanup_errors != 0 {
+        3
+    } else {
+        1
+    };
+    r
+}
+
+/// Live debug socket synth hold: opens SGEN + dual-DAC + LOL + HPL/HPR + RCV + SmartPAs
+/// and leaves the route active (with I2C4 controller restored between transactions)
+/// so live register tweaks can be auditioned over the socket before `debug_synth_stop`.
+pub fn debug_synth_start(b: &mut impl Bus, div: u16, gain_reg: u16, spk_mask: u8) -> Report {
+    let mut r = Report::new();
+    r.frequency = b.frequency();
+    r.start = b.ticks().unwrap_or(0);
+    // Clean any previously active route first so we can re-open cleanly
+    r.phase = 3;
+    for (reg, mask, v) in [
+        (0x240a, 0xffff, 0),
+        (0x2408, 0xfff9, 0),
+        (0x2414, 0xffff, 0),
+        (0x240c, 0xffff, 0),
+        (0x248c, 0xffff, 0x0f9f),
+        (0x248e, 0x001f, 0x001f),
+        (0x239e, 0x0400, 0),
+    ] {
+        let _ = update(b, &mut r, reg, mask, v);
+    }
+    r.count = 0;
+    shutdown(b, &mut r);
+    r = Report::new();
+    if let Err(e) = preflight(b, &mut r) {
+        r.outcome = 2;
+        r.error = e as u32;
+        r.restored = b.restore().is_ok();
+        return r;
+    }
+    b.arm(true);
+    let res = (|| -> Result<()> {
+        startup_route(b, &mut r)?;
+        if r.count > EVENTS - 64 {
+            r.count = 0;
+        }
+        for (reg, mask, v) in [
+            (0x239e, 0x0400, 0x0400),
+            (0x2296, 0xffff, 0xcfa1),
+            (0x2410, 0x0047, 0x0000),
+            (0x240c, 0xffff, 0xc033),
+            (0x2414, 0xffff, 0x0093),
+            (0x248e, 0x001f, 0x0000),
+            (0x2414, 0x000c, 0x0008),
+            (0x248c, 0x0f9f, gain_reg & 0x0f9f),
+            (0x248a, 0x0f9f, gain_reg & 0x0f9f),
+            (0x2408, 0x3fff, 0x3aff),
+            (0x240a, 0x00ff, 0x0003),
+            (0x22c2, 0xffff, div.clamp(1, 31)),
+        ] {
+            update(b, &mut r, reg, mask, v)?;
+        }
+        let mask = if spk_mask & 3 == 0 { 3 } else { spk_mask & 3 };
+        for (bit, addr) in [(1u8, 0x58u8), (2u8, 0x59u8)] {
+            pa(b, &mut r, addr, 2, Some(if mask & bit != 0 { 0x3f } else { 0 }))?;
+        }
+        r.phase = 2;
+        r.opened = b.ticks()?;
+        update(b, &mut r, 0x22c0, 0x40, 0)?;
+        Ok(())
+    })();
+    if let Err(e) = res {
+        r.error = e as u32;
+        let _ = debug_synth_stop(b);
+        r.outcome = 3;
+    } else {
+        r.restored = b.restore().is_ok();
+        r.outcome = 1;
+    }
+    r
+}
+
+/// Stops an active `debug_synth_start` session and verifies all 17 Off predicates.
+pub fn debug_synth_stop(b: &mut impl Bus) -> Report {
+    let mut r = Report::new();
+    r.frequency = b.frequency();
+    r.start = b.ticks().unwrap_or(0);
+    r.phase = 3;
+    for (reg, mask, v) in [
+        (0x240a, 0xffff, 0),
+        (0x2408, 0xfff9, 0),
+        (0x2414, 0xffff, 0),
+        (0x240c, 0xffff, 0),
+        (0x248c, 0xffff, 0x0f9f),
+        (0x248e, 0x001f, 0x001f),
+        (0x239e, 0x0400, 0),
+    ] {
+        if update(b, &mut r, reg, mask, v).is_err() {
+            r.cleanup_errors += 1;
+        }
+    }
+    r.count = 0;
+    shutdown(b, &mut r);
+    r.outcome = if !r.verified_off() {
+        4
+    } else if r.cleanup_errors != 0 {
         3
     } else {
         1

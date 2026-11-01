@@ -278,6 +278,53 @@ pub fn paint_keyboard(c: &mut impl Canvas, font: Glyph, active_key: u8) {
     }
 }
 
+/// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to a 24-key semitone `0..23`.
+pub fn key_at_point(x: u16, y: u16) -> Option<u8> {
+    let ux = x as usize;
+    let uy = y as usize;
+    let kx0 = 66usize;
+    let ky0 = 1024usize;
+    let kw = 41usize;
+    let kh = 112usize;
+    if !(ky0..=ky0 + kh).contains(&uy) || !(kx0..kx0 + kw * 14).contains(&ux) {
+        return None;
+    }
+    if uy < ky0 + 68 {
+        let black_keys: [(usize, u8); 10] = [
+            (0, 1),
+            (1, 3),
+            (3, 6),
+            (4, 8),
+            (5, 10),
+            (7, 13),
+            (8, 15),
+            (10, 18),
+            (11, 20),
+            (12, 22),
+        ];
+        for &(after_white, semi) in &black_keys {
+            let bx = kx0 + (after_white + 1) * kw - 13;
+            if (bx..bx + 24).contains(&ux) {
+                return Some(semi);
+            }
+        }
+    }
+    let white_semitones: [u8; 14] = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23];
+    let idx = (ux - kx0) / kw;
+    white_semitones.get(idx).copied()
+}
+
+/// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to a ScreamTracker pattern row `0..7`.
+pub fn row_at_point(x: u16, y: u16) -> Option<usize> {
+    let ux = x as usize;
+    let uy = y as usize;
+    if (52..=668).contains(&ux) && (760..760 + 8 * 25).contains(&uy) {
+        Some((uy - 760) / 25)
+    } else {
+        None
+    }
+}
+
 pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
     rect(c, 0, 0, dashboard::WIDTH, dashboard::HEIGHT, INK);
     text(c, font, 40, 78, 2, "ayeOS", MINT);

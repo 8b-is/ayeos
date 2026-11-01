@@ -398,5 +398,44 @@ fn usb_tone_snapshot_is_read_only_and_survives_reset() {
     assert_eq!(visited, 8);
     assert_eq!(r_jam.outcome, 1);
     assert!(r_jam.verified_off() && r_jam.restored);
+    assert!(m_jam.writes.contains(&(0x2296, 0xcfa1)));
+    assert!(m_jam.writes.contains(&(0x2408, 0x3aff)));
+    assert!(m_jam.writes.contains(&(0x240a, 0x0003)));
+    assert!(m_jam.writes.contains(&(0x2414, 0x009b)));
+    assert!(m_jam.writes.contains(&(0x239e, 0x0400)));
+
+    let mut m_synth = Model::new();
+    let r_on = tone::debug_synth_start(&mut m_synth, 12, 0x0000, 3);
+    assert_eq!(r_on.outcome, 1);
+    assert_eq!(m_synth.pm[&0x2296], 0xcfa1);
+    assert_eq!(m_synth.pm[&0x2408], 0x3aff);
+    assert_eq!(m_synth.pm[&0x240a], 0x0003);
+    assert_eq!(m_synth.pm[&0x2414], 0x009b);
+    let r_off = tone::debug_synth_stop(&mut m_synth);
+    assert_eq!(r_off.outcome, 1);
+    assert!(r_off.verified_off());
+
+    c.configuration = 1;
+    assert_eq!(
+        c.setup([0xc0, 0xb9, 0x00, 0x00, 0x34, 0x12, 64, 0], &mut out),
+        Reply::Data(64)
+    );
+    assert_eq!(c.dbg_arg_lo, 0x1234);
+    assert_eq!(
+        c.setup([0xc0, 0xb9, 0x02, 0x01, 0x08, 0x24, 64, 0], &mut out),
+        Reply::Data(64)
+    );
+    assert_eq!(c.pending_debug, Some((0x0102, 0x2408)));
+    assert_eq!(
+        c.setup([0xc0, 0xba, 0, 0, 0, 0, 64, 0], &mut out),
+        Reply::Data(64)
+    );
+    assert_eq!(&out[..4], b"ADBG");
+    assert_eq!(
+        c.setup([0xc0, 0xa8, 0xe0, 0xa8, 0, 0, 64, 0], &mut out),
+        Reply::Data(64)
+    );
+    assert_eq!(&out[..4], b"AOTA");
+    assert!(c.pending_ota_reboot);
     assert_eq!(usb_control::DEVICE[12..14], [0x62, 5]);
 }

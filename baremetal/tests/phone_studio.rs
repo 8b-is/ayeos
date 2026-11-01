@@ -275,3 +275,34 @@ fn every_state_and_extreme_counter_fits_the_framebuffer() {
     assert!(20 + 76 * 9 < dashboard::WIDTH);
     assert!(phone_studio::USB_STATUS_Y + 16 < 1480);
 }
+
+#[test]
+fn touch_keyboard_and_tracker_rows_map_every_semitone_and_row() {
+    let white_semis = [0u8, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23];
+    for (wk, &semi) in white_semis.iter().enumerate() {
+        let kx = (66 + wk * 41 + 19) as u16;
+        assert_eq!(phone_studio::key_at_point(kx, 1110), Some(semi));
+    }
+    let black_keys = [
+        (0usize, 1u8),
+        (1, 3),
+        (3, 6),
+        (4, 8),
+        (5, 10),
+        (7, 13),
+        (8, 15),
+        (10, 18),
+        (11, 20),
+        (12, 22),
+    ];
+    for (wk, semi) in black_keys {
+        let bx = (66 + wk * 41 + 27 + 12) as u16;
+        assert_eq!(phone_studio::key_at_point(bx, 1050), Some(semi));
+    }
+    for row in 0..8usize {
+        let ry = (760 + row * 24 + 10) as u16;
+        assert_eq!(phone_studio::row_at_point(200, ry), Some(row));
+    }
+    assert_eq!(phone_studio::key_at_point(10, 1050), None);
+    assert_eq!(phone_studio::row_at_point(200, 700), None);
+}

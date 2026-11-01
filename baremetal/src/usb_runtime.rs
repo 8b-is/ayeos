@@ -499,19 +499,36 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 #[cfg(not(feature = "tone-report"))]
                 let status_y = 68 + 10 * 18;
                 flush_dcache_range(base, stride * SCREEN_H * 4);
+                #[cfg(feature = "tone-report")]
+                let tone_gate = tone_report.outcome == 1 && tone_report.verified_off();
+                #[cfg(feature = "tone-report")]
+                let mut active_row = 0usize;
+                #[cfg(feature = "tone-report")]
+                if studio_visible && tone_gate {
+                    let (outcome, off) = tone_play_live(
+                        tone_gate,
+                        studio_visible,
+                        0x0080,
+                        0,
+                        base,
+                        stride,
+                        &mut active_row,
+                    );
+                    device.control.tracker_plays = 1;
+                    device.control.tracker_last_cmd = 0x0080;
+                    device.control.tracker_last_outcome = outcome;
+                    device.control.tracker_last_off = off;
+                    device.control.tracker_active_row = active_row as u8;
+                }
                 if init == usb_phy::Init::Ready {
                     init = usb_phy::connect(&mut io);
                 }
                 let mut prior = (u8::MAX, u8::MAX, u32::MAX, false, u32::MAX, u32::MAX);
                 let mut status_row = usb_status::StatusRow::new();
                 #[cfg(feature = "tone-report")]
-                let tone_gate = tone_report.outcome == 1 && tone_report.verified_off();
-                #[cfg(feature = "tone-report")]
                 let kp_idle = safe_mmio_read16(KP_MEM1_ADDR);
                 #[cfg(feature = "tone-report")]
                 let mut kp_held = 0u32;
-                #[cfg(feature = "tone-report")]
-                let mut active_row = 0usize;
                 #[cfg(feature = "tone-report")]
                 let mut scriller_phase = 0usize;
                 #[cfg(feature = "tone-report")]
@@ -522,6 +539,9 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     pet_mediatek_watchdog();
                     if init == usb_phy::Init::Attached {
                         device.poll(&mut io, usb_phy::MUSB);
+                    }
+                    if device.control.pending_ota_reboot && (io.faulted() || device.tracker_ready()) {
+                        trigger_baremetal_ota_reboot(base, stride);
                     }
                     let state = (
                         device.control.address,
@@ -564,6 +584,18 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     #[cfg(feature = "tone-report")]
                     if io.faulted() || device.tracker_ready() {
                         idle_ticks = idle_ticks.wrapping_add(1);
+                        if let Some((op_val, idx)) = device.control.pending_debug.take() {
+                            tone_debug_exec(
+                                &mut device.control,
+                                op_val,
+                                idx,
+                                base,
+                                stride,
+                                &mut active_row,
+                                studio_visible,
+                                tone_gate,
+                            );
+                        }
                         let mut trigger = device.control.pending_tracker.take();
                         if trigger.is_none() && studio_visible && kp_idle != 0 && idle_ticks & 0xff == 0 {
                             let kp_now = safe_mmio_read16(KP_MEM1_ADDR);

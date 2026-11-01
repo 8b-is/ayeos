@@ -81,6 +81,40 @@ pub struct Control<'a> {
     pub tracker_last_off: u32,
     #[cfg(feature = "tone-report")]
     pub tracker_active_row: u8,
+    #[cfg(feature = "tone-report")]
+    pub pending_ota_reboot: bool,
+    #[cfg(feature = "tone-report")]
+    pub pending_debug: Option<(u16, u16)>,
+    #[cfg(feature = "tone-report")]
+    pub dbg_arg_lo: u16,
+    #[cfg(feature = "tone-report")]
+    pub dbg_arg_hi: u16,
+    #[cfg(feature = "tone-report")]
+    pub dbg_addr_lo: u16,
+    #[cfg(feature = "tone-report")]
+    pub dbg_addr_hi: u16,
+    #[cfg(feature = "tone-report")]
+    pub dbg_seq: u32,
+    #[cfg(feature = "tone-report")]
+    pub dbg_last_op: u16,
+    #[cfg(feature = "tone-report")]
+    pub dbg_last_idx: u16,
+    #[cfg(feature = "tone-report")]
+    pub dbg_status: u32,
+    #[cfg(feature = "tone-report")]
+    pub dbg_result: u32,
+    #[cfg(feature = "tone-report")]
+    pub dbg_buf: [u8; 32],
+    #[cfg(feature = "tone-report")]
+    pub touch_enabled: bool,
+    #[cfg(feature = "tone-report")]
+    pub touch_irq_gpio: u16,
+    #[cfg(feature = "tone-report")]
+    pub touch_last_x: u16,
+    #[cfg(feature = "tone-report")]
+    pub touch_last_y: u16,
+    #[cfg(feature = "tone-report")]
+    pub touch_events: u16,
 }
 impl<'a> Control<'a> {
     pub fn new(blob: &'a [u8]) -> Self {
@@ -115,7 +149,65 @@ impl<'a> Control<'a> {
             tracker_last_off: 0,
             #[cfg(feature = "tone-report")]
             tracker_active_row: 0,
+            #[cfg(feature = "tone-report")]
+            pending_ota_reboot: false,
+            #[cfg(feature = "tone-report")]
+            pending_debug: None,
+            #[cfg(feature = "tone-report")]
+            dbg_arg_lo: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_arg_hi: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_addr_lo: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_addr_hi: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_seq: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_last_op: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_last_idx: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_status: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_result: 0,
+            #[cfg(feature = "tone-report")]
+            dbg_buf: [0; 32],
+            #[cfg(feature = "tone-report")]
+            touch_enabled: false,
+            #[cfg(feature = "tone-report")]
+            touch_irq_gpio: 0,
+            #[cfg(feature = "tone-report")]
+            touch_last_x: 0,
+            #[cfg(feature = "tone-report")]
+            touch_last_y: 0,
+            #[cfg(feature = "tone-report")]
+            touch_events: 0,
         }
+    }
+    #[cfg(feature = "tone-report")]
+    pub fn dbg_arg(&self) -> u32 {
+        (u32::from(self.dbg_arg_hi) << 16) | u32::from(self.dbg_arg_lo)
+    }
+    #[cfg(feature = "tone-report")]
+    pub fn dbg_addr(&self) -> u32 {
+        (u32::from(self.dbg_addr_hi) << 16) | u32::from(self.dbg_addr_lo)
+    }
+    #[cfg(feature = "tone-report")]
+    fn encode_debug(&self, out: &mut [u8; 64]) {
+        out[..4].copy_from_slice(b"ADBG");
+        out[4..8].copy_from_slice(&self.dbg_seq.to_le_bytes());
+        out[8..10].copy_from_slice(&self.dbg_last_op.to_le_bytes());
+        out[10..12].copy_from_slice(&self.dbg_last_idx.to_le_bytes());
+        out[12..16].copy_from_slice(&self.dbg_status.to_le_bytes());
+        out[16..20].copy_from_slice(&self.dbg_result.to_le_bytes());
+        out[20..24].copy_from_slice(&self.dbg_arg().to_le_bytes());
+        out[24] = u8::from(self.pending_debug.is_some());
+        out[25] = u8::from(self.touch_enabled);
+        out[26..28].copy_from_slice(&self.touch_last_x.to_le_bytes());
+        out[28..30].copy_from_slice(&self.touch_last_y.to_le_bytes());
+        out[30..32].copy_from_slice(&self.touch_events.to_le_bytes());
+        out[32..64].copy_from_slice(&self.dbg_buf);
     }
     #[cfg(feature = "audio-report")]
     pub fn set_report(&mut self, report: &'a [u8]) {
@@ -138,6 +230,8 @@ impl<'a> Control<'a> {
         #[cfg(feature = "tone-report")]
         {
             self.pending_tracker = None;
+            self.pending_ota_reboot = false;
+            self.pending_debug = None;
         }
         self.abort();
     }
@@ -345,6 +439,61 @@ impl<'a> Control<'a> {
                 out[16..20].copy_from_slice(&self.tracker_last_outcome.to_le_bytes());
                 out[20..24].copy_from_slice(&self.tracker_last_off.to_le_bytes());
                 out[24..36].copy_from_slice(b"s3m-tracker\0");
+                Reply::Data(64)
+            }
+            #[cfg(feature = "tone-report")]
+            (0xc0 | 0x40, 0xa8)
+                if value == 0xa8e0
+                    && self.configuration == 1
+                    && !self.tone.is_empty()
+                    && (length == 0 || length == 64) =>
+            {
+                self.pending_ota_reboot = true;
+                if length == 64 {
+                    out[..4].copy_from_slice(b"AOTA");
+                    out[4..8].copy_from_slice(&0xa8e0u32.to_le_bytes());
+                    Reply::Data(64)
+                } else {
+                    Reply::Ack
+                }
+            }
+            #[cfg(feature = "tone-report")]
+            (0xc0, 0xb9)
+                if length == 64 && self.configuration == 1 && !self.tone.is_empty() =>
+            {
+                match value & 0x00ff {
+                    0 => {
+                        self.dbg_arg_lo = index;
+                        self.dbg_last_op = value;
+                        self.dbg_last_idx = index;
+                    }
+                    1 => {
+                        self.dbg_arg_hi = index;
+                        self.dbg_last_op = value;
+                        self.dbg_last_idx = index;
+                    }
+                    10 => {
+                        self.dbg_addr_lo = index;
+                        self.dbg_last_op = value;
+                        self.dbg_last_idx = index;
+                    }
+                    11 => {
+                        self.dbg_addr_hi = index;
+                        self.dbg_last_op = value;
+                        self.dbg_last_idx = index;
+                    }
+                    _ => {
+                        self.pending_debug = Some((value, index));
+                    }
+                }
+                self.encode_debug(out);
+                Reply::Data(64)
+            }
+            #[cfg(feature = "tone-report")]
+            (0xc0, 0xba)
+                if length == 64 && self.configuration == 1 && !self.tone.is_empty() =>
+            {
+                self.encode_debug(out);
                 Reply::Data(64)
             }
             _ => Reply::Stall,
