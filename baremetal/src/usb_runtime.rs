@@ -562,7 +562,7 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                         usb_barrier(); // only order this cell's writes; no range sweep
                     }
                     #[cfg(feature = "tone-report")]
-                    if idle && status_row.ready() {
+                    if io.faulted() || device.tracker_ready() {
                         idle_ticks = idle_ticks.wrapping_add(1);
                         let mut trigger = device.control.pending_tracker.take();
                         if trigger.is_none() && studio_visible && kp_idle != 0 && idle_ticks & 0xff == 0 {

@@ -394,6 +394,7 @@ pub struct Device<'a> {
     stage: Stage,
     ep0_pending: bool,
     quiet_polls: u32,
+    ep0_quiet: u32,
     pub resets: u32,
     pub requests: u32,
     pub stalls: u32,
@@ -406,6 +407,7 @@ impl<'a> Device<'a> {
             stage: Stage::Setup,
             ep0_pending: false,
             quiet_polls: 0,
+            ep0_quiet: 0,
             resets: 0,
             requests: 0,
             stalls: 0,
@@ -416,6 +418,11 @@ impl<'a> Device<'a> {
     pub fn display_idle(&self) -> bool {
         self.stopped || (self.stage == Stage::Setup && self.quiet_polls >= 256)
     }
+    /// EP0-quiet check ignoring 1kHz USB SOF pulses so post-boot S3M jam & keys run.
+    #[cfg(feature = "tone-report")]
+    pub fn tracker_ready(&self) -> bool {
+        self.stopped || self.ep0_quiet >= 32
+    }
     /// Indexed endpoint registers: INDEX=0, CSR0 at +0x12, COUNT0 at +0x18.
     /// No delay, rendering, UART, DMA, IRQ unmask or updater inside this path.
     pub fn poll(&mut self, io: &mut impl Io, base: usize) {
@@ -424,7 +431,9 @@ impl<'a> Device<'a> {
             return;
         }
         let quiet_before = self.quiet_polls;
+        let ep0_quiet_before = self.ep0_quiet;
         self.quiet_polls = 0;
+        self.ep0_quiet = 0;
         let (usb, tx) = acknowledge_interrupts(io, base);
         if io.faulted() {
             self.stopped = true;
@@ -465,6 +474,9 @@ impl<'a> Device<'a> {
         if !self.ep0_pending {
             if self.stage == Stage::Setup && usb == 0 && tx == 0 && csr == 0 {
                 self.quiet_polls = quiet_before.saturating_add(1);
+            }
+            if (usb & 4) == 0 && tx == 0 && csr == 0 {
+                self.ep0_quiet = ep0_quiet_before.saturating_add(1);
             }
             return;
         }
