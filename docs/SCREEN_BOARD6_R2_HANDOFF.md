@@ -5,7 +5,23 @@ Family context v2 / seed `8b-is-family-seed-v1`.
 Base: `c77133bd38abd69b90bc3d85917a848a04ddadf6` (Board6).
 Downloads: <https://g8t.is/downloads/ayeos/studio-board6/r2/>.
 
-## Reported hardware result and limits
+## Post-publication result (2026-11-01)
+
+The operator reports deploying revision `134406e0d25e777a1afdfb688e58b29c8ae162e2`
+to boot_b. Independent decoding of the supplied private capture verifies all
+256 amplifier reads and all 33 PMIC reads complete, I2C configuration restored,
+and `last_observed_idle=true`. CON14 and CON15 both read `0000`; the other
+31 PMIC values and both amplifier maps match r1. This establishes one complete
+readback run, not audible output or repeated-boot endurance. Pre/post-command
+wait counts are not serialized, so this result does not establish whether or
+how long the new waits executed. Raw handset captures remain private.
+
+The newer pinned driver supports AW87394 / PID_23 identification for both
+amplifiers; see [the amplifier research](AW87394_DRIVER_RESEARCH.md) for the
+mechanism and remaining board-specific profile requirements. The following
+sections preserve the build-time reasoning and deployment procedure.
+
+## Original Board6 result and limits
 
 The laptop operator reports Board6/bcd0546 booted and returned a6400-byte
 report. Both amplifier windows completed128/128 reads, with identical values
@@ -73,7 +89,8 @@ request/FSM changes and lost INIT; and faults at every access through added wait
 paths. The mock asserts every read command follows a valid ready sample, with
 no extra commands/acknowledgements on failures. Existing window/transport and
 fault-injection tests run with it. Actual counts/build/rebuild checks are in the
-release receipt. This does not establish a successful r2 handset result.
+release receipt. These simulations alone do not establish a handset result;
+the post-publication capture result is recorded above.
 
 Identify r2 by its image checksum, source receipt and **studio-board6-r2** banner.
 bcdDevice stays **0546**, and all three original capture helpers are supplied.
@@ -85,10 +102,12 @@ sudo python3 capture_board6.py --device /dev/bus/usb/BBB/DDD \
 ```
 
 Optional `--include-fdt` captures this boot's private FDT. Return report JSON/bin
-privately. The original Board6 capture is now verified. The next
+privately. At build time, the original Board6 capture was verified. The next
 milestone is evidence for all33 PMIC reads, followed by identifying the observed
 amplifier register map/profile before selecting amplifier-value writes. Raw23,
-including a reportedc1 byte at register7f, is not yet a verified chip-model ID.
+including a reportedc1 byte at register7f, was not yet a verified chip-model ID.
+The post-publication result and pinned driver research above supersede that
+build-time status.
 
 See [the original Board6 handoff](SCREEN_BOARD6_HANDOFF.md) for pinned reference
 sources, register layouts, protocol, build instructions and licenses.
