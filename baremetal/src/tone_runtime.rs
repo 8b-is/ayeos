@@ -223,6 +223,8 @@ fn tone_debug_exec(
     base: usize,
     stride: usize,
     active_row: &mut usize,
+    qwave_scroll: &mut usize,
+    qwave_tab: &mut usize,
     studio_visible: bool,
     tone_gate: bool,
 ) {
@@ -416,20 +418,21 @@ fn tone_debug_exec(
                 let nwords = ((sub & 0x0f) as usize).clamp(1, 4);
                 let cmd0 = safe_mmio_read32(SPI0_BASE + 0x18);
                 safe_mmio_write32(SPI0_BASE + 0x18, cmd0 | (1 << 2));
-                safe_mmio_write32(
-                    SPI0_BASE + 0x18,
-                    (cmd0 & !(1 << 2) & !(3 << 12) & !(3 << 14)) | (1 << 16),
-                );
+                safe_mmio_write32(SPI0_BASE + 0x18, 0);
+                // Restore SPI0 ~9.6 MHz clock timing after SPI_CMD_RST
+                safe_mmio_write32(SPI0_BASE + 0x00, 0x000a_000a);
+                safe_mmio_write32(SPI0_BASE + 0x28, 0x0005_0005);
                 let pkt_bytes = (nwords * 4) as u32;
-                safe_mmio_write32(SPI0_BASE + 0x0c, pkt_bytes.saturating_sub(1) << 16);
+                safe_mmio_write32(SPI0_BASE + 0x04, (pkt_bytes.saturating_sub(1) << 16) | 0x000a);
+                safe_mmio_write32(SPI0_BASE + 0x0c, 0);
                 let tx0 = control.dbg_arg();
                 let tx1 = control.dbg_addr();
                 let tx_words = [tx0, tx1, idx as u32, 0];
                 for i in 0..nwords {
                     safe_mmio_write32(SPI0_BASE + 0x10, tx_words[i]);
                 }
-                let cmd_act = safe_mmio_read32(SPI0_BASE + 0x18) | 1;
-                safe_mmio_write32(SPI0_BASE + 0x18, cmd_act);
+                // SPI_CMD_ACT (bit 0) | TXMSBF (bit 12) | RXMSBF (bit 13) | DEASSERT (bit 16)
+                safe_mmio_write32(SPI0_BASE + 0x18, 0x0001_3001);
                 let mut done = false;
                 for _ in 0..4096 {
                     let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
@@ -501,6 +504,40 @@ fn tone_debug_exec(
                     control.tracker_active_row = *active_row as u8;
                     control.dbg_status = 1;
                     control.dbg_result = (0x0200 | (row as u32)) | (outcome << 16);
+                } else if let Some(tab) = phone_studio::tab_at_point(x, y) {
+                    *qwave_tab = tab;
+                    *qwave_scroll = 0;
+                    if studio_visible {
+                        let mut canvas = PhoneCanvas { base, stride };
+                        phone_studio::paint_qwave_browser(
+                            &mut canvas,
+                            glyph_8x16_hd,
+                            *qwave_scroll,
+                            *qwave_tab,
+                        );
+                        flush_dcache_range(base, stride * SCREEN_H * 4);
+                    }
+                    control.dbg_status = 1;
+                    control.dbg_result = 0x0300 | (tab as u32);
+                } else if let Some(delta) = phone_studio::scroll_at_point(x, y) {
+                    if delta < 0 {
+                        *qwave_scroll = qwave_scroll.saturating_sub((-delta) as usize);
+                    } else {
+                        *qwave_scroll =
+                            (*qwave_scroll + (delta as usize)).min(phone_studio::QWAVE_MAX_SCROLL);
+                    }
+                    if studio_visible {
+                        let mut canvas = PhoneCanvas { base, stride };
+                        phone_studio::paint_qwave_browser(
+                            &mut canvas,
+                            glyph_8x16_hd,
+                            *qwave_scroll,
+                            *qwave_tab,
+                        );
+                        flush_dcache_range(base, stride * SCREEN_H * 4);
+                    }
+                    control.dbg_status = 1;
+                    control.dbg_result = 0x0400 | (*qwave_scroll as u32);
                 } else {
                     control.dbg_status = 1;
                     control.dbg_result = 0;
@@ -564,6 +601,30 @@ fn tone_debug_exec(
                 control.dbg_status = 1;
                 control.dbg_result =
                     ((control.touch_irq_gpio as u32) << 8) | (control.touch_enabled as u32);
+            }
+            4 => {
+                let delta = idx as i16;
+                if control.dbg_arg_lo != 0xffff {
+                    *qwave_tab = (control.dbg_arg_lo as usize) % phone_studio::QWAVE_TABS.len();
+                }
+                if delta < 0 {
+                    *qwave_scroll = qwave_scroll.saturating_sub((-delta) as usize);
+                } else if delta > 0 {
+                    *qwave_scroll =
+                        (*qwave_scroll + (delta as usize)).min(phone_studio::QWAVE_MAX_SCROLL);
+                }
+                if studio_visible {
+                    let mut canvas = PhoneCanvas { base, stride };
+                    phone_studio::paint_qwave_browser(
+                        &mut canvas,
+                        glyph_8x16_hd,
+                        *qwave_scroll,
+                        *qwave_tab,
+                    );
+                    flush_dcache_range(base, stride * SCREEN_H * 4);
+                }
+                control.dbg_status = 1;
+                control.dbg_result = ((*qwave_tab as u32) << 8) | (*qwave_scroll as u32);
             }
             _ => {
                 control.dbg_status = 0xff;

@@ -325,6 +325,127 @@ pub fn row_at_point(x: u16, y: u16) -> Option<usize> {
     }
 }
 
+pub const QWAVE_TABS: [&str; 3] = ["01:8b.is", "02:ESP32", "03:GC7272"];
+
+pub const QWAVE_DOCS: [[&str; 12]; 3] = [
+    [
+        "# qwave://8b.is/sanctuary (Zero-Float Mode)",
+        "Welcome to AyeOS 5.6 + Qwave Sovereign Browser.",
+        "Scroll with Qwave wheel/drag, touch ▲/▼, or Vol!",
+        "Every musical interval is p/q exact integer.",
+        "MT6358 SGEN -> HPL/HPR -> Dual AW87394 SmartPAs.",
+        "Tap any 24-key Piano note or S3M row above.",
+        "Live USB EP0 socket: /tmp/ayeos-debug.sock",
+        "Qwave Studio mirror: http://127.0.0.1:4380",
+        "Constellation Ink: #05060a / #62e6c9 / #e8b05c",
+        "Six Pillars: Compassion Understanding Moderation",
+        "Love Respect Space * Fine touch from within.",
+        "End of Tab 01 * {<3,<3,<3}+1 * LLL",
+    ],
+    [
+        "# qwave://mothership/esp32-triad-flug",
+        "BLU G75 Mothership <-> ESP32 Triad / FLUG Bus:",
+        "- Node 01: ESP32-S3 USB-JTAG (303a:1001) ACTIVE",
+        "- Node 02: Triad RF / WiFi-CSI / BLE Mesh Ready",
+        "- Node 03: FLUG-OS Sensor & Synth Telemetry",
+        "Guard: MediaTek BROM handshake never touches",
+        "ESP32 nodes on the shared USB hub.",
+        "ScreamTracker rows can cue ESP32 Triad triggers",
+        "simultaneously with phone AW87394 speakers.",
+        "Exact rational clock sync across mothership.",
+        "Use `ayeos-debug scroll` or Qwave to inspect.",
+        "End of Tab 02 * Mothership Bus Online.",
+    ],
+    [
+        "# qwave://hardware/gc7272-touch-spi0",
+        "Panel: GalaxyCore GC7272 720x1640 @ 120Hz TDDI",
+        "Bus: MediaTek SPI0 @ 0x1100a000 (9.6 MHz)",
+        "Pins: GPIO155=MI GPIO156=CSB GPIO157=MO 158=CLK",
+        "Reset: GPIO23 (OUT=1) / IRQ: GPIO1 (IN Pull-Up)",
+        "SPI0 RX IDM Status: 0x00000031 (ROM Bootloader)",
+        "Note: GC7272 is a host-download TDDI chip",
+        "(no internal flash; loads 64KB FW over SPI0",
+        "from galaxycore-spi-gc7272.ko on boot).",
+        "Touch works NOW via Qwave Browser (:4380),",
+        "ayeos-debug touch/scroll, & Vol Up/Down keys!",
+        "End of Tab 03 * Hardware Evidence Verified.",
+    ],
+];
+
+pub const QWAVE_MAX_SCROLL: usize = 7;
+
+pub fn paint_qwave_browser(c: &mut impl Canvas, font: Glyph, scroll_y: usize, active_tab: usize) {
+    let tab = active_tab % QWAVE_TABS.len();
+    let scroll = scroll_y.min(QWAVE_MAX_SCROLL);
+    rect(c, 54, 1176, 612, 150, INK);
+    rect(c, 54, 1176, 612, 22, LINE);
+    for (i, label) in QWAVE_TABS.iter().enumerate() {
+        let tx = 60 + i * 180;
+        let sel = i == tab;
+        rect(c, tx, 1178, 172, 18, if sel { MINT } else { INK });
+        text(
+            c,
+            font,
+            tx + 10,
+            1179,
+            1,
+            label,
+            if sel { INK } else { GOLD },
+        );
+    }
+    let docs = &QWAVE_DOCS[tab];
+    for row in 0..5usize {
+        let idx = (scroll + row).min(docs.len() - 1);
+        let ly = 1202 + row * 24;
+        let line_color = if idx == 0 {
+            MINT
+        } else if row == 0 {
+            GOLD
+        } else {
+            WHITE
+        };
+        text(c, font, 60, ly, 1, docs[idx], line_color);
+    }
+    // Scrollbar track & thumb + ▲ / ▼ touch buttons on right edge
+    rect(c, 616, 1202, 6, 120, LINE);
+    let thumb_y = 1202 + (scroll * 96) / QWAVE_MAX_SCROLL;
+    rect(c, 616, thumb_y, 6, 24, MINT);
+    rect(c, 626, 1202, 38, 58, LINE);
+    text(c, font, 634, 1222, 1, "UP", MINT);
+    rect(c, 626, 1264, 38, 60, LINE);
+    text(c, font, 634, 1286, 1, "DN", GOLD);
+}
+
+/// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to a Qwave Browser tab `0..2`.
+pub fn tab_at_point(x: u16, y: u16) -> Option<usize> {
+    let ux = x as usize;
+    let uy = y as usize;
+    if !(1176..=1198).contains(&uy) {
+        return None;
+    }
+    for i in 0..3usize {
+        let tx = 60 + i * 180;
+        if (tx..tx + 172).contains(&ux) {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to a Qwave Browser scroll delta (`-1` or `+1`).
+pub fn scroll_at_point(x: u16, y: u16) -> Option<i16> {
+    let ux = x as usize;
+    let uy = y as usize;
+    if !(54..=666).contains(&ux) || !(1200..=1326).contains(&uy) {
+        return None;
+    }
+    if uy < 1262 {
+        Some(-1)
+    } else {
+        Some(1)
+    }
+}
+
 pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
     rect(c, 0, 0, dashboard::WIDTH, dashboard::HEIGHT, INK);
     text(c, font, 40, 78, 2, "ayeOS", MINT);
@@ -421,37 +542,11 @@ pub fn paint(c: &mut impl Canvas, font: Glyph, v: &View<'_>) {
     );
     paint_tracker_rows(c, font, 0);
 
-    panel(c, 988, 318);
-    text(c, font, 60, 1002, 1, "04 / MUSIC KEYBOARD & NEXT STEP", color);
+    panel(c, 988, 344);
+    text(c, font, 60, 1002, 1, "04 / PIANO KEYBOARD & QWAVE BROWSER", color);
     paint_keyboard(c, font, tone::PATTERN[0].key_index);
     text(c, font, 60, 1154, 1, next, color);
-    text(
-        c,
-        font,
-        60,
-        1190,
-        1,
-        "VOL TAP: step + play note  /  VOL HOLD: play 8-row S3M song",
-        MINT,
-    );
-    text(
-        c,
-        font,
-        60,
-        1226,
-        1,
-        "LAPTOP USB JAM: sudo python3 scripts/screamtracker_jam.py",
-        WHITE,
-    );
-    text(
-        c,
-        font,
-        60,
-        1262,
-        1,
-        "Capture: capture_tone.py / Every note verifies Off (17/17).",
-        MUTED,
-    );
+    paint_qwave_browser(c, font, 0, 0);
 
     text(
         c,

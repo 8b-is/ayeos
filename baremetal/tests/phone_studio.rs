@@ -305,4 +305,10 @@ fn touch_keyboard_and_tracker_rows_map_every_semitone_and_row() {
     }
     assert_eq!(phone_studio::key_at_point(10, 1050), None);
     assert_eq!(phone_studio::row_at_point(200, 700), None);
+    assert_eq!(phone_studio::tab_at_point(100, 1186), Some(0));
+    assert_eq!(phone_studio::tab_at_point(290, 1186), Some(1));
+    assert_eq!(phone_studio::tab_at_point(490, 1186), Some(2));
+    assert_eq!(phone_studio::tab_at_point(10, 1186), None);
+    assert_eq!(phone_studio::scroll_at_point(640, 1220), Some(-1));
+    assert_eq!(phone_studio::scroll_at_point(640, 1290), Some(1));
 }

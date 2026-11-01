@@ -28,6 +28,15 @@ import screamtracker_jam as jam
 DEFAULT_UNIX_SOCK = "/tmp/ayeos-debug.sock"
 DEFAULT_TCP_HOST = "127.0.0.1"
 DEFAULT_TCP_PORT = 4328
+DEFAULT_HTTP_PORT = 4380
+
+QWAVE_STATE = {
+    "scroll_y": 0,
+    "active_tab": 0,
+    "last_touch_x": 0,
+    "last_touch_y": 0,
+    "last_hit": "ready",
+}
 
 
 def sleep_ms(ms):
@@ -288,13 +297,57 @@ def execute_request(req, device_path=None):
             elif (hit_code & 0xFF00) == 0x0200:
                 hit_kind = "tracker_row"
                 hit_index = hit_code & 0xFF
+            elif (hit_code & 0xFF00) == 0x0300:
+                hit_kind = "qwave_tab"
+                hit_index = hit_code & 0xFF
+                QWAVE_STATE["active_tab"] = hit_index
+                QWAVE_STATE["scroll_y"] = 0
+            elif (hit_code & 0xFF00) == 0x0400:
+                hit_kind = "qwave_scroll"
+                hit_index = hit_code & 0xFF
+                QWAVE_STATE["scroll_y"] = hit_index
+            elif 1176 <= y <= 1198:
+                for tab_i in range(3):
+                    tx = 60 + tab_i * 180
+                    if tx <= x < tx + 172:
+                        hit_kind = "qwave_tab"
+                        hit_index = tab_i
+                        QWAVE_STATE["active_tab"] = tab_i
+                        QWAVE_STATE["scroll_y"] = 0
+            elif 54 <= x <= 666 and 1200 <= y <= 1326:
+                hit_kind = "qwave_scroll"
+                delta = -1 if y < 1262 else 1
+                QWAVE_STATE["scroll_y"] = max(0, min(7, QWAVE_STATE["scroll_y"] + delta))
+                hit_index = QWAVE_STATE["scroll_y"]
+            QWAVE_STATE["last_touch_x"] = x
+            QWAVE_STATE["last_touch_y"] = y
+            QWAVE_STATE["last_hit"] = f"{hit_kind}:{hit_index}"
             return {
                 "ok": res["status"] == 1,
                 "x": x,
                 "y": y,
                 "hit_kind": hit_kind,
                 "hit_index": hit_index,
+                "qwave": dict(QWAVE_STATE),
                 "tracker": atrk,
+                "adbg": res,
+            }
+
+        if cmd == "scroll":
+            delta = int(str(req.get("delta", 1)), 0)
+            tab_arg = req.get("tab", None)
+            if tab_arg is not None:
+                tab_val = int(str(tab_arg), 0) % 3
+                QWAVE_STATE["active_tab"] = tab_val
+            else:
+                tab_val = 0xFFFF
+            QWAVE_STATE["scroll_y"] = max(0, min(7, QWAVE_STATE["scroll_y"] + delta))
+            usb.read(0xc0, 0xb9, 0x0000, tab_val & 0xFFFF, 64)
+            res = exec_debug_op(usb, (4 << 8) | 9, delta & 0xFFFF, timeout_ms=2500, initial_wait_ms=60)
+            return {
+                "ok": True,
+                "delta": delta,
+                "qwave": dict(QWAVE_STATE),
                 "adbg": res,
             }
 
@@ -385,6 +438,11 @@ def parse_line_to_request(line):
         return {"cmd": "synth_stop"}
     if cmd == "touch":
         return {"cmd": "touch", "x": parts[1], "y": parts[2]}
+    if cmd == "scroll":
+        req_out = {"cmd": "scroll", "delta": parts[1] if len(parts) > 1 else "1"}
+        if len(parts) > 2:
+            req_out["tab"] = parts[2]
+        return req_out
     if cmd == "jam":
         return {
             "cmd": "jam",
@@ -398,7 +456,451 @@ def parse_line_to_request(line):
     return {"cmd": cmd}
 
 
-def serve_daemon(unix_path, tcp_host, tcp_port, device_path=None):
+QWAVE_STUDIO_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AyeOS 5.6 x Qwave Live Touch &amp; Scroll Studio (BLU G75)</title>
+<style>
+  * { box-sizing: border-box; user-select: none; }
+  body {
+    margin: 0; padding: 16px;
+    background: #05060a; color: #f4f7ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    display: flex; flex-direction: row; gap: 20px; align-items: flex-start;
+  }
+  .phone-shell {
+    width: 396px; border: 3px solid #62e6c9; border-radius: 24px;
+    background: #090c14; padding: 14px;
+    box-shadow: 0 0 24px #0b2924;
+  }
+  .phone-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 8px; border-bottom: 1px solid #1f293d; margin-bottom: 10px;
+  }
+  .title-mint { color: #62e6c9; font-weight: bold; font-size: 16px; }
+  .title-gold { color: #e8b05c; font-size: 12px; }
+  .section-box {
+    border: 1px solid #1f293d; border-radius: 10px; padding: 8px;
+    margin-bottom: 10px; background: #05060a;
+  }
+  .sec-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: #e8b05c; margin-bottom: 6px;
+  }
+  .tracker-row {
+    padding: 4px 6px; font-size: 12px; cursor: pointer;
+    border-radius: 4px; margin-bottom: 2px; color: #d8e2ff;
+    display: flex; justify-content: space-between;
+  }
+  .tracker-row:hover { background: #132238; }
+  .tracker-row.active { background: #1a3330; color: #e8b05c; border: 1px solid #62e6c9; }
+  .piano-wrap {
+    position: relative; width: 350px; height: 112px;
+    background: #101726; border: 2px solid #1f293d; border-radius: 6px;
+    overflow: hidden; margin: 0 auto;
+  }
+  .white-keys {
+    display: flex; width: 100%; height: 100%;
+  }
+  .wkey {
+    flex: 1; border-right: 1px solid #05060a; background: #f4f7ff;
+    color: #05060a; display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 8px; font-size: 11px; font-weight: bold; cursor: pointer;
+  }
+  .wkey:active, .wkey.active { background: #62e6c9; }
+  .bkey {
+    position: absolute; top: 0; width: 18px; height: 66px;
+    background: #05060a; border: 1px solid #62e6c9; border-radius: 0 0 4px 4px;
+    color: #e8b05c; font-size: 9px; display: flex; align-items: flex-end;
+    justify-content: center; padding-bottom: 4px; cursor: pointer; z-index: 2;
+  }
+  .bkey:active, .bkey.active { background: #e8b05c; color: #05060a; }
+  .qwave-tabs {
+    display: flex; gap: 6px; margin-bottom: 8px;
+  }
+  .qtab {
+    flex: 1; padding: 6px; text-align: center; font-size: 11px;
+    background: #0d1322; color: #e8b05c; border: 1px solid #1f293d;
+    border-radius: 6px; cursor: pointer; font-weight: bold;
+  }
+  .qtab.active { background: #62e6c9; color: #05060a; }
+  .qwave-viewport {
+    height: 170px; overflow-y: auto; border: 1px solid #1f293d;
+    border-radius: 6px; padding: 8px; background: #070a12;
+    scroll-behavior: smooth;
+  }
+  .qline {
+    font-size: 12px; line-height: 22px; padding: 2px 4px;
+    border-bottom: 1px dashed #111827;
+  }
+  .qline.head { color: #62e6c9; font-weight: bold; }
+  .btn-bar {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  button {
+    flex: 1; padding: 8px; background: #112222; color: #62e6c9;
+    border: 1px solid #62e6c9; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-size: 12px; font-weight: bold;
+  }
+  button:hover { background: #62e6c9; color: #05060a; }
+  .side-panel {
+    flex: 1; max-width: 540px;
+  }
+  pre {
+    background: #090c14; border: 1px solid #1f293d; border-radius: 8px;
+    padding: 10px; font-size: 12px; color: #62e6c9; overflow-x: auto;
+  }
+</style>
+</head>
+<body>
+  <div class="phone-shell" id="phoneShell">
+    <div class="phone-header">
+      <div>
+        <div class="title-mint">ayeOS 5_6 * BLU G75</div>
+        <div class="title-gold">720x1640 TOUCH + QWAVE SCROLL</div>
+      </div>
+      <div id="statusBadge" class="title-mint">ONLINE</div>
+    </div>
+
+    <div class="section-box">
+      <div class="sec-label">
+        <span>03 / SCREAMTRACKER S3M (TAP ROW)</span>
+        <span>MT6358 + AW87394</span>
+      </div>
+      <div id="trackerRows"></div>
+      <div class="btn-bar">
+        <button onclick="playFullSong()">PLAY 8-ROW S3M SONG</button>
+      </div>
+    </div>
+
+    <div class="section-box">
+      <div class="sec-label">
+        <span>04 / 24-KEY PIANO (TOUCH OR KEYS Z..M)</span>
+        <span id="lastNoteLabel">READY</span>
+      </div>
+      <div class="piano-wrap" id="pianoWrap">
+        <div class="white-keys" id="whiteKeys"></div>
+      </div>
+    </div>
+
+    <div class="section-box">
+      <div class="sec-label">
+        <span>05 / QWAVE SOVEREIGN BROWSER (SCROLL / TOUCH)</span>
+        <span id="scrollPosLabel">SCROLL: 0</span>
+      </div>
+      <div class="qwave-tabs">
+        <div class="qtab active" id="tab0" onclick="selectTab(0)">01: 8b.is</div>
+        <div class="qtab" id="tab1" onclick="selectTab(1)">02: ESP32 Bus</div>
+        <div class="qtab" id="tab2" onclick="selectTab(2)">03: GC7272</div>
+      </div>
+      <div class="qwave-viewport" id="qwaveViewport"></div>
+      <div class="btn-bar">
+        <button onclick="scrollQwave(-1)">SCROLL UP</button>
+        <button onclick="scrollQwave(1)">SCROLL DOWN</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="side-panel">
+    <div class="section-box">
+      <div class="sec-label">
+        <span>QWAVE x AYEOS LIVE HARDWARE TELEMETRY</span>
+        <span>18d1:4ee0 (0562)</span>
+      </div>
+      <div style="font-size:13px; line-height:20px; color:#d8e2ff;">
+        <p><b>Touch &amp; Scroll Active:</b> Click or drag any piano key, tracker row, or scroll the Qwave Browser viewport on the left (with mouse wheel, trackpad two-finger scroll, or touch). Every action sends exact integer coordinates `(x, y)` over `/tmp/ayeos-debug.sock` to the BLU G75!</p>
+        <p><b>Physical Handset Controls:</b> Tap <b>Volume Up / Down</b> on the phone to scroll Qwave + step through ScreamTracker notes, or hold for 1 second to play the full 8-row S3M arpeggio!</p>
+      </div>
+      <pre id="telemetryBox">Connecting to /tmp/ayeos-debug.sock...</pre>
+    </div>
+  </div>
+
+<script>
+const ROWS = [
+  {row:0, note:"C-5", hz:500, div:12, spk:"58+59 DUAL", y:770},
+  {row:1, note:"E-5", hz:750, div:8,  spk:"L:58 SOLO",  y:795},
+  {row:2, note:"G-5", hz:1000, div:6, spk:"R:59 SOLO",  y:820},
+  {row:3, note:"C-6", hz:1500, div:4, spk:"58+59 DUAL", y:845},
+  {row:4, note:"G-5", hz:1000, div:6, spk:"58+59 DUAL", y:870},
+  {row:5, note:"E-5", hz:750, div:8,  spk:"R:59 SOLO",  y:895},
+  {row:6, note:"D-5", hz:600, div:10, spk:"L:58 SOLO",  y:920},
+  {row:7, note:"C-5", hz:500, div:12, spk:"58+59 DUAL", y:945}
+];
+
+const WHITE_SEMI = [0,2,4,5,7,9,11,12,14,16,17,19,21,23];
+const WHITE_NAMES = ["C4","D4","E4","F4","G4","A4","B4","C5","D5","E5","F5","G5","A5","B5"];
+const BLACK_KEYS = [
+  {after:0, semi:1, name:"C#"},
+  {after:1, semi:3, name:"D#"},
+  {after:3, semi:6, name:"F#"},
+  {after:4, semi:8, name:"G#"},
+  {after:5, semi:10, name:"A#"},
+  {after:7, semi:13, name:"C#"},
+  {after:8, semi:15, name:"D#"},
+  {after:10, semi:18, name:"F#"},
+  {after:11, semi:20, name:"G#"},
+  {after:12, semi:22, name:"A#"}
+];
+
+const DOCS = [
+  [
+    "# qwave://8b.is/sanctuary (Zero-Float Mode)",
+    "Welcome to AyeOS 5_6 + Qwave Sovereign Browser.",
+    "Scroll with Qwave wheel/drag, touch UP/DN, or Vol!",
+    "Every musical interval is p/q exact integer.",
+    "MT6358 SGEN -> HPL/HPR -> Dual AW87394 SmartPAs.",
+    "Tap any 24-key Piano note or S3M row above.",
+    "Live USB EP0 socket: /tmp/ayeos-debug.sock",
+    "Qwave Studio mirror: http://127.0.0.1:4380",
+    "Constellation Ink: #05060a / #62e6c9 / #e8b05c",
+    "Six Pillars: Compassion Understanding Moderation",
+    "Love Respect Space * Fine touch from within.",
+    "End of Tab 01 * {<3,<3,<3}+1 * LLL"
+  ],
+  [
+    "# qwave://mothership/esp32-triad-flug",
+    "BLU G75 Mothership <-> ESP32 Triad / FLUG Bus:",
+    "- Node 01: ESP32-S3 USB-JTAG (303a:1001) ACTIVE",
+    "- Node 02: Triad RF / WiFi-CSI / BLE Mesh Ready",
+    "- Node 03: FLUG-OS Sensor & Synth Telemetry",
+    "Guard: MediaTek BROM handshake never touches",
+    "ESP32 nodes on the shared USB hub.",
+    "ScreamTracker rows can cue ESP32 Triad triggers",
+    "simultaneously with phone AW87394 speakers.",
+    "Exact rational clock sync across mothership.",
+    "Use ayeos-debug scroll or Qwave to inspect.",
+    "End of Tab 02 * Mothership Bus Online."
+  ],
+  [
+    "# qwave://hardware/gc7272-touch-spi0",
+    "Panel: GalaxyCore GC7272 720x1640 @ 120Hz TDDI",
+    "Bus: MediaTek SPI0 @ 0x1100a000 (9600 kHz)",
+    "Pins: GPIO155=MI GPIO156=CSB GPIO157=MO 158=CLK",
+    "Reset: GPIO23 (OUT=1) / IRQ: GPIO1 (IN Pull-Up)",
+    "SPI0 RX IDM Status: 0x00000031 (ROM Bootloader)",
+    "Note: GC7272 is a host-download TDDI chip",
+    "(no internal flash; loads 64KB FW over SPI0",
+    "from galaxycore-spi-gc7272.ko on boot).",
+    "Touch works NOW via Qwave Browser (:4380),",
+    "ayeos-debug touch/scroll, & Vol Up/Down keys!",
+    "End of Tab 03 * Hardware Evidence Verified."
+  ]
+];
+
+let currentTab = 0;
+let currentScroll = 0;
+let cmdQueue = [];
+let runningCmd = false;
+
+function buildTracker() {
+  const box = document.getElementById("trackerRows");
+  box.innerHTML = "";
+  for (let i = 0; i < ROWS.length; i++) {
+    const r = ROWS[i];
+    const div = document.createElement("div");
+    div.className = "tracker-row";
+    div.id = "trow" + i;
+    div.innerHTML = "<span>0" + i + "  " + r.note + "  " + r.hz + "Hz (D:" + r.div + ")</span><span>" + r.spk + "</span>";
+    div.onclick = () => sendTouch(200, r.y, "ROW 0" + i + " (" + r.note + ")");
+    box.appendChild(div);
+  }
+}
+
+function buildPiano() {
+  const wrap = document.getElementById("pianoWrap");
+  const wbox = document.getElementById("whiteKeys");
+  for (let i = 0; i < 14; i++) {
+    const k = document.createElement("div");
+    k.className = "wkey";
+    k.textContent = WHITE_NAMES[i];
+    const phoneX = 66 + i * 41 + 20;
+    k.onclick = () => sendTouch(phoneX, 1110, WHITE_NAMES[i]);
+    wbox.appendChild(k);
+  }
+  for (let i = 0; i < BLACK_KEYS.length; i++) {
+    const bk = BLACK_KEYS[i];
+    const el = document.createElement("div");
+    el.className = "bkey";
+    el.style.left = ((bk.after + 1) * 25 - 9) + "px";
+    el.textContent = bk.name;
+    const phoneX = 66 + (bk.after + 1) * 41 - 1;
+    el.onclick = (ev) => { ev.stopPropagation(); sendTouch(phoneX, 1050, bk.name); };
+    wrap.appendChild(el);
+  }
+}
+
+function renderQwave() {
+  for (let i = 0; i < 3; i++) {
+    document.getElementById("tab" + i).className = (i === currentTab) ? "qtab active" : "qtab";
+  }
+  const vp = document.getElementById("qwaveViewport");
+  vp.innerHTML = "";
+  const lines = DOCS[currentTab];
+  for (let i = 0; i < lines.length; i++) {
+    const d = document.createElement("div");
+    d.className = (i === 0) ? "qline head" : "qline";
+    d.textContent = lines[i];
+    vp.appendChild(d);
+  }
+  vp.scrollTop = currentScroll * 24;
+  document.getElementById("scrollPosLabel").textContent = "TAB 0" + (currentTab + 1) + " / SCROLL: " + currentScroll;
+}
+
+function apiPost(payload, label) {
+  if (label) {
+    document.getElementById("lastNoteLabel").textContent = label;
+  }
+  cmdQueue.push(payload);
+  drainQueue();
+}
+
+async function drainQueue() {
+  if (runningCmd) return;
+  runningCmd = true;
+  while (cmdQueue.length > 0) {
+    const payload = cmdQueue.shift();
+    try {
+      const resp = await fetch("/api/cmd", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      document.getElementById("telemetryBox").textContent = JSON.stringify(data, null, 2);
+      if (data.tracker && typeof data.tracker.active_row === "number") {
+        for (let i = 0; i < 8; i++) {
+          const el = document.getElementById("trow" + i);
+          if (el) el.className = (i === data.tracker.active_row) ? "tracker-row active" : "tracker-row";
+        }
+      }
+    } catch (e) {
+      document.getElementById("telemetryBox").textContent = "Error: " + e;
+    }
+  }
+  runningCmd = false;
+}
+
+function sendTouch(x, y, label) {
+  apiPost({cmd: "touch", x: x, y: y}, label);
+}
+
+function playFullSong() {
+  apiPost({cmd: "jam", val: "0x0080", idx: "0"}, "8-ROW S3M SONG");
+}
+
+function selectTab(tab) {
+  currentTab = tab;
+  currentScroll = 0;
+  renderQwave();
+  const tx = 100 + tab * 180;
+  apiPost({cmd: "touch", x: tx, y: 1186}, "QWAVE TAB 0" + (tab + 1));
+}
+
+function scrollQwave(delta) {
+  currentScroll = Math.max(0, Math.min(7, currentScroll + delta));
+  renderQwave();
+  apiPost({cmd: "scroll", delta: delta, tab: currentTab}, "QWAVE SCROLL " + currentScroll);
+}
+
+document.getElementById("qwaveViewport").addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const delta = ev.deltaY > 0 ? 1 : -1;
+  scrollQwave(delta);
+}, {passive: false});
+
+const KEYBOARD_SEMI = {
+  "z":0, "s":1, "x":2, "d":3, "c":4, "v":5, "g":6, "b":7, "h":8, "n":9, "j":10, "m":11, ",":12
+};
+window.addEventListener("keydown", (ev) => {
+  const k = ev.key.toLowerCase();
+  if (k in KEYBOARD_SEMI) {
+    const semi = KEYBOARD_SEMI[k];
+    const wi = WHITE_SEMI.indexOf(semi);
+    if (wi >= 0) {
+      sendTouch(66 + wi * 41 + 20, 1110, WHITE_NAMES[wi]);
+    }
+  } else if (ev.key === "ArrowDown") {
+    scrollQwave(1);
+  } else if (ev.key === "ArrowUp") {
+    scrollQwave(-1);
+  }
+});
+
+buildTracker();
+buildPiano();
+renderQwave();
+apiPost({cmd: "status"}, "READY");
+</script>
+</body>
+</html>
+"""
+
+
+def http_request_complete(raw_bytes):
+    if b"\r\n\r\n" not in raw_bytes:
+        return False
+    hdr_bytes, _, body_bytes = raw_bytes.partition(b"\r\n\r\n")
+    hdr_text = hdr_bytes.decode("utf-8", errors="replace")
+    content_len = 0
+    for line in hdr_text.splitlines():
+        if line.lower().startswith("content-length:"):
+            try:
+                content_len = int(line.split(":", 1)[1].strip(), 10)
+            except ValueError:
+                content_len = 0
+    return len(body_bytes) >= content_len
+
+
+def handle_http_request(raw_bytes, device_path=None):
+    hdr_bytes, _, body_bytes = raw_bytes.partition(b"\r\n\r\n")
+    header_part = hdr_bytes.decode("utf-8", errors="replace")
+    body_part = body_bytes.decode("utf-8", errors="replace")
+    first_line = header_part.splitlines()[0] if header_part else "GET / HTTP/1.1"
+    parts = first_line.split()
+    method = parts[0] if len(parts) > 0 else "GET"
+    path = parts[1] if len(parts) > 1 else "/"
+
+    if method == "POST" and path == "/api/cmd":
+        try:
+            req = json.loads(body_part.strip() or "{}")
+            resp = execute_request(req, device_path=device_path)
+        except Exception as exc:
+            resp = {"ok": False, "error": str(exc)}
+        payload = json.dumps(resp).encode("utf-8")
+        headers = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            f"Content-Length: {len(payload)}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("utf-8")
+        return headers + payload
+
+    if path.startswith("/api/status"):
+        try:
+            resp = execute_request({"cmd": "status"}, device_path=device_path)
+        except Exception as exc:
+            resp = {"ok": False, "error": str(exc)}
+        payload = json.dumps(resp).encode("utf-8")
+        headers = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json; charset=utf-8\r\n"
+            f"Content-Length: {len(payload)}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("utf-8")
+        return headers + payload
+
+    payload = QWAVE_STUDIO_HTML.encode("utf-8")
+    headers = (
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        f"Content-Length: {len(payload)}\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("utf-8")
+    return headers + payload
+
+
+def serve_daemon(unix_path, tcp_host, tcp_port, http_port=DEFAULT_HTTP_PORT, device_path=None):
     if os.path.exists(unix_path):
         os.unlink(unix_path)
     unix_srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -413,10 +915,18 @@ def serve_daemon(unix_path, tcp_host, tcp_port, device_path=None):
     tcp_srv.listen(8)
     tcp_srv.setblocking(False)
 
+    http_srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    http_srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    http_srv.bind((tcp_host, http_port))
+    http_srv.listen(8)
+    http_srv.setblocking(False)
+
     poller = select.poll()
     poller.register(unix_srv.fileno(), select.POLLIN)
     poller.register(tcp_srv.fileno(), select.POLLIN)
+    poller.register(http_srv.fileno(), select.POLLIN)
     clients = {}
+    http_clients = {}
     buffers = {}
 
     print(
@@ -425,6 +935,7 @@ def serve_daemon(unix_path, tcp_host, tcp_port, device_path=None):
                 "daemon": "ayeos-debug-socket-v1",
                 "unix_socket": unix_path,
                 "tcp_socket": f"{tcp_host}:{tcp_port}",
+                "qwave_http_studio": f"http://{tcp_host}:{http_port}",
                 "status": "listening",
             }
         ),
@@ -446,6 +957,33 @@ def serve_daemon(unix_path, tcp_host, tcp_port, device_path=None):
                     clients[conn.fileno()] = conn
                     buffers[conn.fileno()] = b""
                     poller.register(conn.fileno(), select.POLLIN)
+                elif fd == http_srv.fileno():
+                    conn, _ = http_srv.accept()
+                    conn.setblocking(False)
+                    http_clients[conn.fileno()] = conn
+                    buffers[conn.fileno()] = b""
+                    poller.register(conn.fileno(), select.POLLIN)
+                elif fd in http_clients:
+                    conn = http_clients[fd]
+                    try:
+                        chunk = conn.recv(8192)
+                    except OSError:
+                        chunk = b""
+                    if chunk:
+                        buffers[fd] += chunk
+                    raw = buffers.get(fd, b"")
+                    if http_request_complete(raw) or not chunk:
+                        poller.unregister(fd)
+                        http_clients.pop(fd, None)
+                        buffers.pop(fd, None)
+                        try:
+                            out = handle_http_request(raw, device_path=device_path)
+                            conn.setblocking(True)
+                            conn.sendall(out)
+                        except OSError:
+                            pass
+                        finally:
+                            conn.close()
                 elif fd in clients:
                     conn = clients[fd]
                     if flag & (select.POLLHUP | select.POLLERR):
@@ -481,8 +1019,11 @@ def serve_daemon(unix_path, tcp_host, tcp_port, device_path=None):
     finally:
         for conn in clients.values():
             conn.close()
+        for conn in http_clients.values():
+            conn.close()
         unix_srv.close()
         tcp_srv.close()
+        http_srv.close()
         if os.path.exists(unix_path):
             os.unlink(unix_path)
 
@@ -506,17 +1047,18 @@ def send_via_unix_socket(unix_path, req):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serve", action="store_true", help="Run background UNIX + TCP debug socket daemon")
+    parser.add_argument("--serve", action="store_true", help="Run background UNIX + TCP + Qwave HTTP Studio daemon")
     parser.add_argument("--unix-sock", default=DEFAULT_UNIX_SOCK, help="UNIX socket path")
     parser.add_argument("--tcp-host", default=DEFAULT_TCP_HOST, help="TCP bind host")
     parser.add_argument("--tcp-port", type=int, default=DEFAULT_TCP_PORT, help="TCP bind port")
+    parser.add_argument("--http-port", type=int, default=DEFAULT_HTTP_PORT, help="Qwave HTTP Studio bind port")
     parser.add_argument("--device", help="Explicit /dev/bus/usb/BBB/DDD device path")
     parser.add_argument("--direct", action="store_true", help="Bypass socket daemon and talk to USB directly")
-    parser.add_argument("command", nargs="*", help="Debug command (e.g. status, pmic_read 0x2408, touch 160 1100, ota_reboot)")
+    parser.add_argument("command", nargs="*", help="Debug command (e.g. status, scroll 1 0, touch 160 1100, ota_reboot)")
     args = parser.parse_args()
 
     if args.serve:
-        serve_daemon(args.unix_sock, args.tcp_host, args.tcp_port, device_path=args.device)
+        serve_daemon(args.unix_sock, args.tcp_host, args.tcp_port, http_port=args.http_port, device_path=args.device)
         return
 
     cmd_line = " ".join(args.command) if args.command else "status"

@@ -346,13 +346,31 @@ def run_interactive(usb, esp32_tty):
         print()
 
 
+NOTE_NAME_TO_DIV = {
+    "C4": 24, "C#4": 22, "D4": 21, "D#4": 20, "E4": 19, "F4": 18,
+    "F#4": 17, "G4": 16, "G#4": 15, "A4": 14, "A#4": 13, "B4": 12,
+    "C5": 12, "C#5": 11, "D5": 10, "D#5": 9, "E5": 8, "F5": 8,
+    "F#5": 7, "G5": 6, "G#5": 6, "A5": 5, "A#5": 4, "B5": 4, "C6": 3,
+}
+
+
+def parse_note_arg(val):
+    s = str(val).strip().upper()
+    if s in NOTE_NAME_TO_DIV:
+        return NOTE_NAME_TO_DIV[s]
+    n = int(s, 0)
+    if not (1 <= n <= 31):
+        raise argparse.ArgumentTypeError("note must be a note name (C4..C6) or divider 1..31")
+    return n
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", help="USB device path (/dev/bus/usb/BBB/DDD); auto-detected if omitted")
     parser.add_argument("--status", action="store_true", help="Read ATRK tracker status")
     parser.add_argument("--play-song", action="store_true", help="Play the 8-row ScreamTracker S3M pattern")
     parser.add_argument("--row", type=int, choices=range(8), help="Play a single ScreamTracker row (0..7)")
-    parser.add_argument("--note", type=int, choices=range(1, 32), help="Play custom SGEN divider (1..31, 6000/div Hz)")
+    parser.add_argument("--note", type=parse_note_arg, help="Play note name (C4..C6) or SGEN divider (1..31, 6000/div Hz)")
     parser.add_argument("--gain-db", type=int, choices=(-10, -4, 0, 4, 8), default=8, help="Lineout PGA gain in dB")
     parser.add_argument("--spk", choices=("both", "left", "right"), default="both", help="Speaker PA selection")
     parser.add_argument("--duration-ms", type=int, default=160, help="Note duration in ms (20..1500)")

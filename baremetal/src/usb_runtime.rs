@@ -504,6 +504,10 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 #[cfg(feature = "tone-report")]
                 let mut active_row = 0usize;
                 #[cfg(feature = "tone-report")]
+                let mut qwave_scroll = 0usize;
+                #[cfg(feature = "tone-report")]
+                let mut qwave_tab = 0usize;
+                #[cfg(feature = "tone-report")]
                 if studio_visible && tone_gate {
                     let (outcome, off) = tone_play_live(
                         tone_gate,
@@ -592,6 +596,8 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                 base,
                                 stride,
                                 &mut active_row,
+                                &mut qwave_scroll,
+                                &mut qwave_tab,
                                 studio_visible,
                                 tone_gate,
                             );
@@ -609,6 +615,18 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                 }
                             } else {
                                 if (3..64).contains(&kp_held) {
+                                    qwave_scroll = (qwave_scroll + 1) % (phone_studio::QWAVE_MAX_SCROLL + 1);
+                                    if qwave_scroll == 0 {
+                                        qwave_tab = (qwave_tab + 1) % phone_studio::QWAVE_TABS.len();
+                                    }
+                                    let mut canvas = PhoneCanvas { base, stride };
+                                    phone_studio::paint_qwave_browser(
+                                        &mut canvas,
+                                        glyph_8x16_hd,
+                                        qwave_scroll,
+                                        qwave_tab,
+                                    );
+                                    flush_dcache_range(base, stride * SCREEN_H * 4);
                                     let next_row = (active_row + 1) % tone::PATTERN.len();
                                     trigger = Some((0x0081 + next_row as u16, 0));
                                 }
