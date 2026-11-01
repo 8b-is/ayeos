@@ -215,6 +215,12 @@ fn pm(b: &mut impl Bus, r: &mut Report, reg: u16, update: Option<(u16, u16)>) ->
     }
     Ok(observed)
 }
+fn pa_off(v: u8) -> bool {
+    // AW87394 (PID 0x23) SYSCTRL (0x02) power-on/standby default is 0x3e
+    // (EN_PA bit0 = 0, EN_SPK bit3 = 1); writing the ACF Off pair (0x02, 0x00)
+    // reads back 0x3e in standby or 0x00 if latched.
+    v == 0 || v == 0x3e
+}
 fn pa(b: &mut impl Bus, r: &mut Report, addr: u8, reg: u8, write: Option<u8>) -> Result<u8> {
     let tick = if r.phase < 3 {
         b.ticks()?
@@ -247,7 +253,12 @@ fn pa(b: &mut impl Bus, r: &mut Report, addr: u8, reg: u8, write: Option<u8>) ->
         },
         result,
     )? as u8;
-    if write.is_some() && u32::from(observed) != expected {
+    let matched = if reg == 2 && expected == 0 {
+        pa_off(observed)
+    } else {
+        u32::from(observed) == expected
+    };
+    if write.is_some() && !matched {
         r.events[r.count - 1].error = Error::Readback as u16;
         return Err(Error::Readback);
     }
@@ -533,7 +544,7 @@ pub fn shutdown(b: &mut impl Bus, r: &mut Report) {
     r.phase = 4;
     r.off = 0;
     for (i, addr) in [0x58, 0x59].into_iter().enumerate() {
-        if pa(b, r, addr, 2, None) == Ok(0) {
+        if pa(b, r, addr, 2, None).is_ok_and(pa_off) {
             r.off |= 1 << i;
         }
     }

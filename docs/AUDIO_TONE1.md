@@ -66,6 +66,9 @@ machine then:
 
 1. Mutes/disables SGEN and opens LOL. Writes full-byte amplifier Off02=00,
    software reset00=aa (readback must remain ID23), then Off again on each chip.
+   On AW87394 (`PID=0x23`), `SYSCTRL` (`0x02`) reads back `0x3e` (`EN_PA=0`,
+   `EN_SPK=1`) in power-on/standby state or `0x00` if latched; both `0x00` and
+   `0x3e` are accepted as PA Off readbacks.
 2. Enables clock buffer, AUDGLB, CLKSQ, NCP/ZCD/AUDIF/AUD clocks, observes250µs,
    enables DAC/power/testmodel and AFE clocks, observes250µs, then AFE.
 3. Uses the documented SGEN sequence229a=0006,2296=cba1,229a=0003,229a=000b;
@@ -92,7 +95,7 @@ resets only an owned failed I²C controller transaction and restores its17 saved
 configuration registers. WACS2 may acknowledge a late response only after this
 path submitted a command. No PMIC-wrapper reset or guessed GPIO fallback exists.
 
-Final, fresh reads establish a17-bit Off mask: bothPA02==0 plus the15 predicates
+Final, fresh reads establish a17-bit Off mask: bothPA02 in `{0x00, 0x3e}` plus the15 predicates
 in `tone::OFF` (SGEN mute/disabled, SDM/scrambler off, SRC/AFE off, LOL open/core/bias
 off, DACR off, audio global off, IBIST/ZCD/NV/LDO/NCP off and clock gates).
 **verified-Off means these observed predicates**, not zero power or an acoustic

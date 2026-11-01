@@ -42,6 +42,7 @@ struct Model {
     broken: u8,
     restore_bad: bool,
     corrupt: Option<u16>,
+    standby_3e: bool,
 }
 impl Model {
     fn new() -> Self {
@@ -77,6 +78,7 @@ impl Model {
             broken: 0,
             restore_bad: false,
             corrupt: None,
+            standby_3e: false,
         }
     }
     fn op(&mut self) -> Result<()> {
@@ -155,6 +157,11 @@ impl Bus for Model {
         }
         if r == 0 {
             assert_eq!(v, 0xaa);
+            if self.standby_3e {
+                self.pa.insert((a, 2), 0x3e);
+            }
+        } else if r == 2 && v == 0 && self.standby_3e {
+            self.pa.insert((a, 2), 0x3e);
         } else {
             self.pa.insert((a, r), v);
         }
@@ -185,6 +192,13 @@ fn complete_tone_is_attenuated_ordered_bounded_and_exportable() {
     assert!(r.closed - r.opened < (tone::TONE_US + 20_000) * 13);
     assert_eq!(m.pa[&(0x58, 2)], 0);
     assert_eq!(m.pa[&(0x59, 2)], 0);
+    let mut m3e = Model::new();
+    m3e.standby_3e = true;
+    let r3e = tone::run(&mut m3e, true);
+    assert_eq!(r3e.outcome, 1);
+    assert!(r3e.verified_off() && r3e.restored);
+    assert_eq!(m3e.pa[&(0x58, 2)], 0x3e);
+    assert_eq!(m3e.pa[&(0x59, 2)], 0x3e);
     let encoded = r.encode("0123456789abcdef0123456789abcdef01234567", false, 1, 2, 3);
     assert_eq!(encoded.len(), 6400);
     if let Ok(path) = std::env::var("AYEOS_TONE_TEST_DUMP") {

@@ -75,6 +75,15 @@ class Tone(unittest.TestCase):
     def test_synthetic_success_and_release_identity_is_separate_policy(self):
         b = complete()
         self.assertEqual(t.decode(b)["outcome"], "complete")
+        b3e = bytearray(b)
+        n = struct.unpack_from("<I", b3e, 36)[0]
+        for i in range(n):
+            at = 256 + i * 24
+            kind, addr, expected = b3e[at + 8], struct.unpack_from("<H", b3e, at + 12)[0], struct.unpack_from("<I", b3e, at + 16)[0]
+            if kind in (3, 4) and addr in (0x5802, 0x5902) and expected == 0:
+                struct.pack_into("<I", b3e, at + 20, 0x3e)
+        self.assertEqual(t.decode(b3e)["outcome"], "complete")
+        self.assertTrue(t.decode(b3e)["verified_off"])
         b[64:104] = b"0" * 40
         self.assertEqual(t.decode(b)["revision"], "0" * 40)
         struct.pack_into("<I", b, 12, 3)

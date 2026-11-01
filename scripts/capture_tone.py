@@ -160,7 +160,9 @@ def decode(data):
                 raise ValueError("invalid read phase or readback error")
             if kind in (2, 4) and phase not in (1, 2, 3):
                 raise ValueError("invalid write phase")
-            if error == 10 and actual & mask == expected & mask:
+            pa_off = kind in (3, 4) and addr in (0x5802, 0x5902) and expected == 0
+            matched = actual in (0, 0x3e) if pa_off else actual & mask == expected & mask
+            if error == 10 and matched:
                 raise ValueError("readback error has matching observation")
         elif (addr or mask or phase not in (0, 1, 3) or error == 10
               or expected not in (10, 100, 250, 30000)
@@ -172,7 +174,7 @@ def decode(data):
             if key in observed:
                 raise ValueError("duplicate final Off observation")
             observed[key] = (error, actual)
-        if kind in (2, 4) and not error and actual & mask != expected & mask:
+        if kind in (2, 4) and not error and not matched:
             raise ValueError("successful update has mismatching readback")
         prior_phase = phase
         events.append(dict(tick=tick, kind=kind, phase=phase, error=ERRORS[error],
@@ -183,7 +185,7 @@ def decode(data):
         (1, reg, mask, value) for reg, mask, value in OFF]
     for i, (kind, addr, mask, value) in enumerate(checks):
         error, actual = observed.get((kind, addr), (1, 0))
-        if not error and actual & mask == value:
+        if not error and (actual in (0, 0x3e) if kind == 3 else actual & mask == value):
             off |= 1 << i
     if off != w[7]:
         raise ValueError("Off mask disagrees with final readback evidence")

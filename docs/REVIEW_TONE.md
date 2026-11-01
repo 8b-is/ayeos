@@ -61,7 +61,8 @@ Board6 remains a **pre-tone** snapshot, not post-tone register evidence.
 The stricter `capture_tone.py` validates the successful operation sequence from
 `baremetal/src/tone.rs`: preflight reads/gates, startup, profiles, unmute, cleanup
 and the 17 final observations. It checks register widths, kind-specific fields,
-readback/error consistency, successful delays, and complete-result timestamps.
+readback/error consistency (including AW87394 `0x02` standby readback `0x3e` or
+`0x00` for PA Off), successful delays, and complete-result timestamps.
 This is a pinned tone1-v1 algorithm check. A future algorithm change needs an
 explicit decoder/policy update even if its wire shape or USB identity is reused.
 Presentation-only firmware changes do not affect this sequence.
