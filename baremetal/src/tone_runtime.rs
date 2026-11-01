@@ -109,31 +109,29 @@ fn tone_run(
     r
 }
 
+// MT6358_AFE_SGEN_CFG1 (0x22c2) bits 3:0 are a frequency multiplier N = 1..15
+// (f = (8000 Hz / 64) * N = 125 Hz * N; N=0 / N=16 is 0 Hz DC silence!).
+// Map the 24 semitones across 1..15 in strictly ascending pitch order.
 const SEMITONE_DIVS: [u16; 24] = [
-    24, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 8, 7, 6, 6, 5, 4, 4, 3,
+    1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 10, 11, 12, 12, 13, 14, 14, 15,
 ];
 
 fn div_to_key_index(div: u16) -> u8 {
-    match div {
-        22.. => 0,
-        20..=21 => 1,
-        18..=19 => 2,
-        17 => 3,
-        16 => 4,
-        15 => 5,
-        14 => 6,
-        13 => 7,
-        12 => 6,
-        11 => 8,
-        10 => 9,
-        9 => 10,
-        8 => 10,
-        7 => 12,
-        6 => 13,
-        5 => 15,
-        4 => 17,
-        3 => 20,
-        2 => 22,
+    match div & 0x0f {
+        0 | 1 => 0,
+        2 => 2,
+        3 => 4,
+        4 => 5,
+        5 => 7,
+        6 => 9,
+        7 => 11,
+        8 => 12,
+        9 => 14,
+        10 => 16,
+        11 => 17,
+        12 => 19,
+        13 => 20,
+        14 => 21,
         _ => 23,
     }
 }
@@ -179,7 +177,7 @@ fn tone_play_live(
             2 => (0x0000, 8),
             3 => (0x060c, -4),
             4 => (0x0912, -10),
-            _ => (0x0000, 8),
+            _ => (0x0408, 0),
         };
         let dur_10ms = (cmd_index >> 8) as u32;
         let duration_us = if dur_10ms == 0 {
@@ -187,11 +185,12 @@ fn tone_play_live(
         } else {
             (dur_10ms * 10_000).clamp(20_000, 1_500_000)
         };
+        let step_mult = (div & 0x0f).clamp(1, 15);
         custom_step = [tone::TrackerStep {
             note: "JAM",
             key_index,
-            hz: 6000 / div,
-            div,
+            hz: 125 * step_mult,
+            div: step_mult,
             gain_reg,
             gain_db,
             spk_mask,

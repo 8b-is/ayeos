@@ -38,6 +38,53 @@ QWAVE_STATE = {
     "last_hit": "ready",
 }
 
+# MT6358_AFE_SGEN_CFG1 (0x22c2) bits 3:0 are a frequency multiplier N = 1..15
+# where Frequency = (8000 Hz / 64) * N = 125 Hz * N.
+# (N = 0 or N = 16 has low 4 bits = 0 -> 0 Hz DC click with no tone!)
+# Map all 14 white keys (indices 0,2,4,5,7,9,11,12,14,16,17,19,21,23) to distinct
+# ascending multipliers N = 1..14 (125 Hz, 250 Hz, 375 Hz, ..., 1750 Hz)!
+SEMITONE_TO_SGEN_MULT = (
+    1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7,
+    8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 14, 14,
+)
+
+TRACKER_ROW_SGEN = (
+    (2, "both", -4),
+    (3, "both", -4),
+    (4, "both", -4),
+    (5, "both", -4),
+    (6, "left", -4),
+    (5, "right", -4),
+    (4, "both", -4),
+    (2, "both", -4),
+)
+
+
+def host_key_at_point(x, y):
+    kx0, ky0, kw, kh = 66, 1024, 41, 112
+    if not (ky0 <= y <= ky0 + kh and kx0 <= x < kx0 + kw * 14):
+        return None
+    if y < ky0 + 68:
+        black_keys = (
+            (0, 1), (1, 3), (3, 6), (4, 8), (5, 10),
+            (7, 13), (8, 15), (10, 18), (11, 20), (12, 22),
+        )
+        for after_w, semi in black_keys:
+            bx = kx0 + (after_w + 1) * kw - 13
+            if bx <= x < bx + 24:
+                return semi
+    white_semis = (0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23)
+    idx = (x - kx0) // kw
+    if 0 <= idx < len(white_semis):
+        return white_semis[idx]
+    return None
+
+
+def host_row_at_point(x, y):
+    if 52 <= x <= 668 and 760 <= y < 760 + 8 * 25:
+        return (y - 760) // 25
+    return None
+
 
 def sleep_ms(ms):
     if ms > 0:
@@ -285,19 +332,63 @@ def execute_request(req, device_path=None):
         if cmd == "touch":
             x = int(str(req["x"]), 0) & 0xFFFF
             y = int(str(req["y"]), 0) & 0xFFFF
+            semi = host_key_at_point(x, y)
+            row = host_row_at_point(x, y)
+            if semi is not None:
+                # Use true ascending SGEN multiplier N = 1..15 (125 Hz * N) and -4 dB smooth ZCD gain
+                mult_n = SEMITONE_TO_SGEN_MULT[semi]
+                idx = jam.encode_note_index(gain_db=-4, spk="both", duration_ms=140)
+                atrk = jam.trigger_and_wait(usb, mult_n, idx, timeout_ms=3500)
+                adbg = decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
+                hit_kind = "piano_key"
+                hit_index = semi
+                QWAVE_STATE["last_touch_x"] = x
+                QWAVE_STATE["last_touch_y"] = y
+                QWAVE_STATE["last_hit"] = f"piano_key:{semi}({mult_n * 125}Hz)"
+                return {
+                    "ok": atrk["last_outcome"] == 1,
+                    "x": x,
+                    "y": y,
+                    "hit_kind": hit_kind,
+                    "hit_index": hit_index,
+                    "sgen_mult": mult_n,
+                    "freq_hz": mult_n * 125,
+                    "gain_db": -4,
+                    "qwave": dict(QWAVE_STATE),
+                    "tracker": atrk,
+                    "adbg": adbg,
+                }
+            if row is not None:
+                mult_n, spk, gain_db = TRACKER_ROW_SGEN[row % 8]
+                idx = jam.encode_note_index(gain_db=gain_db, spk=spk, duration_ms=140)
+                atrk = jam.trigger_and_wait(usb, mult_n, idx, timeout_ms=3500)
+                atrk["active_row"] = row
+                adbg = decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
+                hit_kind = "tracker_row"
+                hit_index = row
+                QWAVE_STATE["last_touch_x"] = x
+                QWAVE_STATE["last_touch_y"] = y
+                QWAVE_STATE["last_hit"] = f"tracker_row:{row}({mult_n * 125}Hz)"
+                return {
+                    "ok": atrk["last_outcome"] == 1,
+                    "x": x,
+                    "y": y,
+                    "hit_kind": hit_kind,
+                    "hit_index": hit_index,
+                    "sgen_mult": mult_n,
+                    "freq_hz": mult_n * 125,
+                    "gain_db": gain_db,
+                    "qwave": dict(QWAVE_STATE),
+                    "tracker": atrk,
+                    "adbg": adbg,
+                }
             usb.read(0xc0, 0xb9, 0x0000, y, 64)
             res = exec_debug_op(usb, (0 << 8) | 9, x, timeout_ms=3500, initial_wait_ms=420)
             atrk = jam.decode_atrk(usb.read(0xc0, 0xb8, 0, 0, 64))
             hit_code = res["result"] & 0xFFFF
             hit_kind = "none"
             hit_index = None
-            if (hit_code & 0xFF00) == 0x0100:
-                hit_kind = "piano_key"
-                hit_index = hit_code & 0xFF
-            elif (hit_code & 0xFF00) == 0x0200:
-                hit_kind = "tracker_row"
-                hit_index = hit_code & 0xFF
-            elif (hit_code & 0xFF00) == 0x0300:
+            if (hit_code & 0xFF00) == 0x0300:
                 hit_kind = "qwave_tab"
                 hit_index = hit_code & 0xFF
                 QWAVE_STATE["active_tab"] = hit_index
@@ -618,14 +709,14 @@ QWAVE_STUDIO_HTML = """<!DOCTYPE html>
 
 <script>
 const ROWS = [
-  {row:0, note:"C-5", hz:500, div:12, spk:"58+59 DUAL", y:770},
-  {row:1, note:"E-5", hz:750, div:8,  spk:"L:58 SOLO",  y:795},
-  {row:2, note:"G-5", hz:1000, div:6, spk:"R:59 SOLO",  y:820},
-  {row:3, note:"C-6", hz:1500, div:4, spk:"58+59 DUAL", y:845},
-  {row:4, note:"G-5", hz:1000, div:6, spk:"58+59 DUAL", y:870},
-  {row:5, note:"E-5", hz:750, div:8,  spk:"R:59 SOLO",  y:895},
-  {row:6, note:"D-5", hz:600, div:10, spk:"L:58 SOLO",  y:920},
-  {row:7, note:"C-5", hz:500, div:12, spk:"58+59 DUAL", y:945}
+  {row:0, note:"C-4", hz:250, div:2, spk:"58+59 DUAL", y:770},
+  {row:1, note:"G-4", hz:375, div:3, spk:"58+59 DUAL", y:795},
+  {row:2, note:"C-5", hz:500, div:4, spk:"58+59 DUAL", y:820},
+  {row:3, note:"E-5", hz:625, div:5, spk:"58+59 DUAL", y:845},
+  {row:4, note:"G-5", hz:750, div:6, spk:"L:58 SOLO",  y:870},
+  {row:5, note:"E-5", hz:625, div:5, spk:"R:59 SOLO",  y:895},
+  {row:6, note:"C-5", hz:500, div:4, spk:"58+59 DUAL", y:920},
+  {row:7, note:"C-4", hz:250, div:2, spk:"58+59 DUAL", y:945}
 ];
 
 const WHITE_SEMI = [0,2,4,5,7,9,11,12,14,16,17,19,21,23];

@@ -342,13 +342,13 @@ pub const MUSIC: [(u8, u8); 18] = [
     (0x7d, 0),
 ];
 
-/// Boot-time 4-note ScreamTracker arpeggio (500Hz -> 750Hz -> 1000Hz -> 1500Hz).
-pub const BOOT_NOTES: [u16; 4] = [12, 8, 6, 4];
+/// Boot-time 4-note ScreamTracker arpeggio (250Hz -> 375Hz -> 500Hz -> 750Hz, N = 2, 3, 4, 6).
+pub const BOOT_NOTES: [u16; 4] = [2, 3, 4, 6];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TrackerStep {
     pub note: &'static str,
-    pub key_index: u8, // 0..14 white/sharp index on 2-octave keyboard
+    pub key_index: u8, // 0..23 semitone index on 2-octave keyboard
     pub hz: u16,
     pub div: u16,
     pub gain_reg: u16,
@@ -357,85 +357,85 @@ pub struct TrackerStep {
     pub duration_us: u32,
 }
 
-/// 8-row ScreamTracker (S3M) studio pattern exercising pitch, gain (0..+8dB) & L/R PAs.
+/// 8-row ScreamTracker (S3M) studio pattern exercising ascending pitch (125Hz * N), smooth gain & L/R PAs.
 pub const PATTERN: [TrackerStep; 8] = [
     TrackerStep {
-        note: "B-4",
-        key_index: 6,
-        hz: 500,
-        div: 12,
-        gain_reg: 0x0408,
-        gain_db: 0,
+        note: "C-4",
+        key_index: 2,
+        hz: 250,
+        div: 2,
+        gain_reg: 0x060c,
+        gain_db: -4,
         spk_mask: 3,
         duration_us: 120_000,
     },
     TrackerStep {
-        note: "F#5",
-        key_index: 10,
-        hz: 750,
-        div: 8,
-        gain_reg: 0x0408,
-        gain_db: 0,
-        spk_mask: 3,
-        duration_us: 120_000,
-    },
-    TrackerStep {
-        note: "B-5",
-        key_index: 13,
-        hz: 1000,
-        div: 6,
-        gain_reg: 0x0204,
-        gain_db: 4,
-        spk_mask: 3,
-        duration_us: 120_000,
-    },
-    TrackerStep {
-        note: "F#6",
-        key_index: 17,
-        hz: 1500,
-        div: 4,
-        gain_reg: 0x0204,
-        gain_db: 4,
-        spk_mask: 3,
-        duration_us: 120_000,
-    },
-    TrackerStep {
-        note: "B-6",
-        key_index: 20,
-        hz: 2000,
+        note: "G-4",
+        key_index: 4,
+        hz: 375,
         div: 3,
-        gain_reg: 0x0000,
-        gain_db: 8,
+        gain_reg: 0x060c,
+        gain_db: -4,
+        spk_mask: 3,
+        duration_us: 120_000,
+    },
+    TrackerStep {
+        note: "C-5",
+        key_index: 5,
+        hz: 500,
+        div: 4,
+        gain_reg: 0x0408,
+        gain_db: 0,
+        spk_mask: 3,
+        duration_us: 120_000,
+    },
+    TrackerStep {
+        note: "E-5",
+        key_index: 7,
+        hz: 625,
+        div: 5,
+        gain_reg: 0x0408,
+        gain_db: 0,
+        spk_mask: 3,
+        duration_us: 120_000,
+    },
+    TrackerStep {
+        note: "G-5",
+        key_index: 9,
+        hz: 750,
+        div: 6,
+        gain_reg: 0x0408,
+        gain_db: 0,
         spk_mask: 1,
         duration_us: 140_000,
     },
     TrackerStep {
-        note: "F#6",
-        key_index: 17,
-        hz: 1500,
-        div: 4,
-        gain_reg: 0x0000,
-        gain_db: 8,
+        note: "E-5",
+        key_index: 7,
+        hz: 625,
+        div: 5,
+        gain_reg: 0x0408,
+        gain_db: 0,
         spk_mask: 2,
         duration_us: 140_000,
     },
     TrackerStep {
-        note: "B-5",
-        key_index: 13,
-        hz: 1000,
-        div: 6,
-        gain_reg: 0x0000,
-        gain_db: 8,
+        note: "C-5",
+        key_index: 5,
+        hz: 500,
+        div: 4,
+        gain_reg: 0x060c,
+        gain_db: -4,
         spk_mask: 3,
         duration_us: 140_000,
     },
     TrackerStep {
-        note: "B-4",
-        key_index: 6,
-        hz: 500,
-        div: 12,
-        gain_reg: 0x0000,
-        gain_db: 8,
+        note: "C-4",
+        key_index: 2,
+        hz: 250,
+        div: 2,
+        gain_reg: 0x060c,
+        gain_db: -4,
         spk_mask: 3,
         duration_us: 180_000,
     },
@@ -750,9 +750,11 @@ pub fn play_steps(
                 r.count = 0;
             }
             r.start = b.ticks()?;
-            let div = step.div.clamp(1, 31);
+            let div = (step.div & 0x0f).clamp(1, 15);
             let gain = step.gain_reg & 0x0f9f;
             let mask = if step.spk_mask & 3 == 0 { 3 } else { step.spk_mask & 3 };
+            // Mute SGEN (0x22c0 bit 6 = 1) while changing frequency multiplier (0x22c2) to prevent pop
+            update(b, &mut r, 0x22c0, 0x40, 0x40)?;
             update(b, &mut r, 0x248a, 0x0f9f, gain)?;
             update(b, &mut r, 0x248c, 0x0f9f, gain)?;
             update(b, &mut r, 0x22c2, 0xffff, div)?;
