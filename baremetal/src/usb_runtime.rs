@@ -61,6 +61,9 @@ impl usb_control::Io for UsbIo {
     }
     fn write32(&mut self, a: usize, v: u32) {
         if !self.faulted() {
+            #[cfg(feature = "alpha-report")]
+            safe_mmio_write32(a, v);
+            #[cfg(not(feature = "alpha-report"))]
             unsafe {
                 write_volatile(a as *mut u32, v);
             }
@@ -93,8 +96,10 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
     let banner = "AYEOS studio-board4-r3 / USB EP0 READBACK (not CDC serial)";
     #[cfg(all(feature = "audio-report", not(feature = "board6-report")))]
     let banner = "AYEOS studio-board5-r2 / SmartPA ID probe + USB EP0";
-    #[cfg(feature = "board6-report")]
+    #[cfg(all(feature = "board6-report", not(feature = "alpha-report")))]
     let banner = "AYEOS studio-board6-r2 / inherited PA windows + MT6358 readback";
+    #[cfg(feature = "alpha-report")]
+    let banner = "AYEOS audio-alpha1 / fault records + genuine Marine fixture";
     board_line(base, stride, 0, banner);
     board_line(
         base,
@@ -102,6 +107,8 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
         1,
         "Full-speed USB-C; host requests only. No updater or radio commands.",
     );
+    #[cfg(feature = "alpha-report")]
+    let alpha_tests = alpha_selftests(base, stride);
     let initial_faults = fault_count();
     let mut line = board_screen::Line::new();
     let _ = write!(
@@ -205,12 +212,19 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     70,
                     "ID 18d1:4ee0 bcd0545; capture_board5.py; no tone/profile enabled",
                 );
-                #[cfg(feature = "board6-report")]
+                #[cfg(all(feature = "board6-report", not(feature = "alpha-report")))]
                 board_line(
                     base,
                     stride,
                     70,
                     "ID 18d1:4ee0 bcd0546; capture_board6.py; inherited state, not POR",
+                );
+                #[cfg(feature = "alpha-report")]
+                board_line(
+                    base,
+                    stride,
+                    70,
+                    "ID 18d1:4ee0 bcd0561; capture_alpha.py; keep raw evidence private",
                 );
                 board_line(
                     base,
@@ -266,6 +280,8 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                         start_faults: fault_count(),
                     };
                     let report = board6::run(&mut probe_io, blob);
+                    #[cfg(feature = "alpha-report")]
+                    alpha_event(6, report.words[20] as u64, report.words[1344] as u64);
                     let w = &report.words;
                     let mut line = board_screen::Line::new();
                     let done = w[board6::AMP..board6::PMIC]
@@ -346,6 +362,11 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 let mut device = usb_control::Device::new(blob); // CRC computed before attach
                 #[cfg(feature = "audio-report")]
                 device.control.set_report(&report_bytes);
+                #[cfg(feature = "alpha-report")]
+                let diagnostics_bytes =
+                    alpha_snapshot(alpha_tests, board_pages::crc32(&report_bytes));
+                #[cfg(feature = "alpha-report")]
+                device.control.set_diagnostics(&diagnostics_bytes);
                 // Commit the completed fallback before potentially faulting in USB init.
                 #[cfg(feature = "board6-report")]
                 flush_dcache_range(base, stride * SCREEN_H * 4);

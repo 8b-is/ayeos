@@ -1,0 +1,25 @@
+[package]
+name = "marine-core"
+version = "1.0.0"
+edition = "2021"
+authors = ["8b-is Team", "Claude AI", "Hue"]
+description = "Marine Algorithm - Universal Salience Primitive for AyeOS"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# ZERO external dependencies. Pure Rust, no_std, no allocator required.
+# The sealed mind owns every line — no crates.io deps, no serde derive (an
+# external proc-macro is a compile-time hack-in surface and blocks bare-metal
+# cross-compilation). Serialization is the integer wave-frame
+# (mem8_core::wave_frame) or a proxy outside the sealed boundary.
+
+[features]
+default = []
+# Opt-in deprecation warnings for the legacy f32 public surface. Off by
+# default because the workspace runs with `-D warnings`; flip it on
+# locally to find call sites that need migrating to MarineInt /
+# MarineConfigRational.
+deprecate-f32-api = []
+
+[lib]
+path = "src/lib.rs"

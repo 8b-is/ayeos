@@ -20,6 +20,10 @@ SECTIONS
 
     .rodata : ALIGN(4096) {
         *(.rodata .rodata.*)
+        . = ALIGN(8);
+        __ayeos_fixups_start = .;
+        KEEP(*(.ayeos_fixups))
+        __ayeos_fixups_end = .;
     }
 
     .data : ALIGN(4096) {

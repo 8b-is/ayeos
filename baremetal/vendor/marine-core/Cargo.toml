@@ -1,0 +1,10 @@
+[package]
+name = "marine-core"
+version = "1.0.0-ayeos.1"
+edition = "2021"
+authors = ["8b-is Team", "Claude AI", "Hue"]
+license = "MIT"
+description = "Pinned MarineInt, bounded allocator-free AyeOS fixture adapter"
+
+[lib]
+path = "src/lib.rs"

@@ -87,8 +87,8 @@ def decode(data):
                 bytes=SIZE, crc32=f"{zlib.crc32(data):08x}", sha256=hashlib.sha256(data).hexdigest())
 
 
-def capture(usb):
-    if usb.read(0x80, 6, 0x0100, length=18) != DEVICE:
+def capture(usb, expected_device=DEVICE):
+    if usb.read(0x80, 6, 0x0100, length=18) != expected_device:
         raise ValueError("not the exact Board6 device descriptor")
     if usb.read(0x80, 6, 0x0200, length=18) != b4.CONFIG or usb.read(0x80, 8, length=1) != b"\x01":
         raise ValueError("Board6 configuration mismatch")

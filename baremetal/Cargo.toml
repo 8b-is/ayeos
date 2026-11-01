@@ -1,6 +1,6 @@
 [package]
 name = "ayeos-baremetal-mt6768"
-version = "5.5.0"
+version = "5.6.0"
 edition = "2021"
 description = "100% Bare-Metal #![no_std] #![no_main] Rust Kernel for BLU G75 (MediaTek Helio G81 / mt6768) — Zero Linux, Zero C, Zero Floats."
 
@@ -9,6 +9,10 @@ board-report = []
 usb-report = ["board-report"]
 audio-report = ["usb-report"]
 board6-report = ["audio-report"]
+alpha-report = ["board6-report", "dep:marine-core"]
+
+[dependencies]
+marine-core = { path = "vendor/marine-core", optional = true }
 
 [profile.release]
 opt-level = "z"
