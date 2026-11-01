@@ -21,6 +21,23 @@ amplifiers; see [the amplifier research](AW87394_DRIVER_RESEARCH.md) for the
 mechanism and remaining board-specific profile requirements. The following
 sections preserve the build-time reasoning and deployment procedure.
 
+### Main-branch integration
+
+Publication integrates main revision `4be7f2253d7b342129a36edde589a80a4ad86561`,
+including its package version 5.5.0 and size-optimized release profile. A new
+build from that combined tree is not the hardware-tested r2 artifact. For exact
+r2 reproduction, use revision `134406e0d25e777a1afdfb688e58b29c8ae162e2` and its
+published source/build receipt. The integrated tree requires a separate hardware
+run before claiming equivalent handset behavior.
+
+The integration fixes the preview caller of main's changed legacy USB helper:
+absence of a collected diagnostic is represented by `None`; diagnostic queries
+then stall rather than fabricate values or initialize the legacy audio/radio
+path. The retired demo remains compile-disabled. Board4-6 use their separate
+frozen-report USB implementation. CI now runs the existing synthetic diagnostic
+and Python suites and builds all five bare-metal feature configurations, so a
+host-only green build cannot hide this class of integration error.
+
 ## Original Board6 result and limits
 
 The laptop operator reports Board6/bcd0546 booted and returned a6400-byte

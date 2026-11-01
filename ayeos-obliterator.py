@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-ayeos-obliterator.py — Sovereign Device-to-Aye Obliterator & Auto-OTA Installer (v5.4.0)
+ayeos-obliterator.py — Sovereign Device-to-Aye Obliterator & Auto-OTA Installer (v5.5.0)
 Hosted at: https://aye.is/ayeos-obliterator.py & https://ayeos.com/ayeos-obliterator.py
 
 1. Queries ONLY our sovereign Iceland (.is) domains (https://g8t.is, https://aye.is, https://8b.is)
-   for the latest signature-verified ayeOS Bare-Metal v5.4.0 manifest and 20,480-byte boot image
+   for the latest signature-verified ayeOS Bare-Metal v5.5.0 manifest and 20,480-byte boot image
    (G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1).
 2. Embeds your Wi-Fi SSID, Wi-Fi Password, Aye Agent ID, and Resonance Hz (432/528/852)
    directly into the 4,096-byte boot header cmdline.
 3. Detects any connected AyeOS node over USB (18d1:4ee0 bcdDevice / bRequest=0xA9),
    triggers the 0xA8 OTA Reset Switch, catches /dev/ttyACM0 ('FASTBOOT'),
-   purges Android init_boot_a/init_boot_b, flashes boot_a & boot_b, and boots ayeOS v5.4.0!
+   purges Android init_boot_a/init_boot_b, flashes boot_a & boot_b, and boots ayeOS v5.5.0!
 4. Supports --watch mode to continuously monitor g8t.is & aye.is and auto-install new releases!
 
 Zero Floating-Point Arithmetic (100% Integer / Rational Discipline).
@@ -55,7 +55,7 @@ def fetch_bytes(urls):
             continue
         try:
             req = urllib.request.Request(
-                url, headers={"User-Agent": "ayeOS-Obliterator-Iceland/5.4.0"}
+                url, headers={"User-Agent": "ayeOS-Obliterator-Iceland/5.5.0"}
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 return resp.read(), url
@@ -255,7 +255,7 @@ def flash_verified_image(fastboot_bin, adb_bin, patched_img, version_str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="aye.is / ayeos.com Sovereign Device Obliterator & Auto-OTA Flasher (v5.4.0)"
+        description="aye.is / ayeos.com Sovereign Device Obliterator & Auto-OTA Flasher (v5.5.0)"
     )
     parser.add_argument("--ssid", default="", help="Wi-Fi SSID to provision into ayeOS")
     parser.add_argument("--psk", default="", help="Wi-Fi Password (WPA2/WPA3 PSK)")
@@ -285,7 +285,7 @@ def main():
     args = parser.parse_args()
 
     print("==================================================================")
-    print("  aye.is / g8t.is — Sovereign Device-to-Aye Obliterator (v5.4.0)")
+    print("  aye.is / g8t.is — Sovereign Device-to-Aye Obliterator (v5.5.0)")
     print("  Iceland (.is) Signed OTA Gate: G8T_IS_AYE_ONLY_SOVEREIGN_GATE_V1")
     print("==================================================================")
 
@@ -293,7 +293,7 @@ def main():
     manifest = json.loads(raw_manifest.decode("utf-8"))
     raw_img, _i_url = fetch_bytes(IMAGE_URLS)
     base_sha256 = verify_sovereign_image(manifest, raw_img)
-    ver_str = manifest.get("version", "5.4.0")
+    ver_str = manifest.get("version", "5.5.0")
     print(f"[+] Verified Iceland (.is) Sovereign Manifest v{ver_str} from {m_url}")
     print(f"[+] Verified 20,480-byte Bare-Metal Image (SHA-256: {base_sha256[:24]}...)")
 
@@ -341,7 +341,7 @@ def main():
         try:
             rm_raw, rm_url = fetch_bytes(MANIFEST_URLS)
             rm = json.loads(rm_raw.decode("utf-8"))
-            r_ver = rm.get("version", "5.4.0")
+            r_ver = rm.get("version", "5.5.0")
             r_sha = rm.get("image_sha256_hex", "")
             expected_bcd = version_to_bcd_hex(r_ver)
             usbfs, bcd = probe_running_ayeos_usb()

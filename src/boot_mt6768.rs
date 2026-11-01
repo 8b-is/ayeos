@@ -53,6 +53,12 @@ pub mod mt6768_mmio {
 
     /// MT6768 Audio Front End (`snd-soc-mt6768-afe.ko`) PCM/I2S DMA engine (`0x11220000`).
     pub const AFE_PCM_I2S_BASE: u64 = 0x1122_0000;
+    /// Verified Connsys I2S DAI control & monitor registers (`mt6768-reg.h:1346-1347`).
+    pub const AFE_CONNSYS_I2S_CON: u64 = 0x1122_0C78;
+    pub const AFE_CONNSYS_I2S_MON: u64 = 0x1122_0C7C;
+
+    /// MediaTek `BTIF` (`btif@1100c000`) used for STP-over-BTIF WMT (`0x6631`) & FM BOP transport.
+    pub const BTIF_BASE: u64 = 0x1100_C000;
 
     /// MediaTek MDP / Display Subsystem (`mdp_drv_mt6768.ko` + GalaxyCore `GC7272` `720x1640@120Hz`).
     pub const DISP_MDP_BASE: u64 = 0x1400_0000;
@@ -60,8 +66,19 @@ pub mod mt6768_mmio {
     pub const DISPLAY_HEIGHT_PX: u32 = 1640;
     pub const DISPLAY_REFRESH_HZ: u32 = 120;
 
-    /// MediaTek ConnInfra (`wmt_drv.ko`, `wlan_drv_gen4m_6768.ko`, `bt_drv_connac1x.ko`, `gps_drv_stp.ko` `0x6768`).
-    pub const CONNINFRA_BASE: u64 = 0x1800_0000;
+    /// MediaTek `consys@18002000` (`mediatek,mt6768-consys` D-Die + companion `MT6631` RF A-Die):
+    /// All 10 MMIO windows from `mt6768.dts:2455-2501` (`mt6768.c:1141-1170`).
+    pub const CONN_MCU_CONFIG_BASE: u64 = 0x1800_2000;
+    pub const TOP_RGU_BASE: u64 = 0x1000_7000;
+    pub const INFRACFG_AO_BASE: u64 = 0x1000_1000;
+    pub const SPM_BASE: u64 = 0x1000_6000;
+    pub const CONN_HIF_ON_BASE: u64 = 0x1800_7000;
+    pub const CONN_TOP_MISC_OFF_BASE: u64 = 0x180B_1000;
+    pub const CONN_MCU_CFG_ON_BASE: u64 = 0x180A_3000;
+    pub const CONN_MCU_CIRQ_BASE: u64 = 0x180A_5000;
+    pub const CONN_TOP_MISC_ON_BASE: u64 = 0x180C_1000;
+    pub const CONN_HIF_PDMA_BASE: u64 = 0x1800_4000;
+    pub const CONNINFRA_BASE: u64 = CONN_MCU_CONFIG_BASE;
 }
 
 /// ARM64 Linux/Bare-Metal Kernel Image magic (`"ARM\x64"` = `0x644d5241` at byte offset `0x38`).

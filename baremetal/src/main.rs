@@ -261,7 +261,8 @@ pub extern "C" fn rust_baremetal_main(dtb_phys_addr: u64) -> ! {
     loop {
         pet_mediatek_watchdog();
         frame = frame.wrapping_add(1);
-        if poll_usb_ota_switch(frame, &mut pending_addr) {
+        // The preview does not initialize or sample the legacy audio/radio path.
+        if poll_usb_ota_switch(frame, &mut pending_addr, None) {
             trigger_baremetal_ota_reboot(base, stride);
         }
         let key = safe_mmio_read16(KP_MEM1_ADDR);
@@ -522,6 +523,18 @@ fn safe_mmio_write16(addr: usize, val: u16) {
     }
 }
 
+#[inline(always)]
+fn safe_mmio_write32(addr: usize, val: u32) {
+    unsafe {
+        asm!(
+            "str {val:w}, [{addr}]",
+            addr = in(reg) addr,
+            val = in(reg) val,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
 /// MediaTek `mt6768` USB 2.0 (`MUSB`) device controller base (`0x1120_0000`).
 const MUSB_BASE: usize = 0x1120_0000;
 const MUSB_FADDR: usize = MUSB_BASE + 0x00;
@@ -531,7 +544,7 @@ const MUSB_INDEX: usize = MUSB_BASE + 0x0E;
 const MUSB_FIFO0: usize = MUSB_BASE + 0x20;
 const MUSB_CSR0: usize = MUSB_BASE + 0x102;
 
-/// 18-byte USB Device Descriptor (`VID = 0x18D1`, `PID = 0x4EE0`, `bcdDevice = 0x0540` v5.4.0)
+/// 18-byte USB Device Descriptor (`VID = 0x18D1`, `PID = 0x4EE0`, `bcdDevice = 0x0550` v5.5.0)
 const AYEOS_USB_DEV_DESC: [u8; 18] = [
     18,   // bLength
     0x01, // bDescriptorType = DEVICE
@@ -542,7 +555,7 @@ const AYEOS_USB_DEV_DESC: [u8; 18] = [
     64,   // bMaxPacketSize0 = 64 bytes
     0xD1, 0x18, // idVendor = 0x18D1 (Google/Fastboot compatible)
     0xE0, 0x4E, // idProduct = 0x4EE0
-    0x40, 0x05, // bcdDevice = 5.40 (ayeOS Bare-Metal v5.4.0)
+    0x50, 0x05, // bcdDevice = 5.50 (ayeOS Bare-Metal v5.5.0 · studio-board5)
     0x00, // iManufacturer
     0x00, // iProduct
     0x00, // iSerialNumber
@@ -550,7 +563,110 @@ const AYEOS_USB_DEV_DESC: [u8; 18] = [
 ];
 
 /// Live USB Endpoint 0 Version Probe payload (`bmRequestType = 0xC0`, `bRequest = 0xA9`)
-const AYEOS_USB_VER_PAYLOAD: &[u8] = b"AYEOS:5.4.0:G8T.IS+AYE.IS";
+const AYEOS_USB_VER_PAYLOAD: &[u8] = b"AYEOS:5.5.0:STUDIO-BOARD5:G8T.IS+AYE.IS";
+
+/// Structured 64-byte `studio-board5` Hardware Diagnostic Report returned over USB EP0 (`bRequest = 0xAA` / `0xAB`).
+#[derive(Clone, Copy)]
+struct StudioBoard5Diag {
+    pa58_chipid: u8,
+    pa58_sysctrl: u8,
+    pa58_i2c_stat: u8,
+    pa59_chipid: u8,
+    pa59_sysctrl: u8,
+    pa59_i2c_stat: u8,
+    afe_top_con0: u32,
+    afe_dac_con0: u32,
+    afe_dl1_cur: u32,
+    sram_sample0: u32,
+    mt6358_auddec0: u16,
+    mt6358_audenc0: u16,
+    mt6358_auxadc0: u16,
+    mt6358_accdet: u16,
+    consys_hw_ver: u32,
+    spm_conn_pwr: u32,
+    btif_lsr: u32,
+}
+
+#[inline(always)]
+fn push_hex8(buf: &mut [u8; 64], idx: &mut usize, val: u8) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    if *idx + 2 <= 64 {
+        buf[*idx] = HEX[((val >> 4) & 0xF) as usize];
+        buf[*idx + 1] = HEX[(val & 0xF) as usize];
+        *idx += 2;
+    }
+}
+
+#[inline(always)]
+fn push_hex16(buf: &mut [u8; 64], idx: &mut usize, val: u16) {
+    push_hex8(buf, idx, (val >> 8) as u8);
+    push_hex8(buf, idx, (val & 0xFF) as u8);
+}
+
+#[inline(always)]
+fn push_hex32(buf: &mut [u8; 64], idx: &mut usize, val: u32) {
+    push_hex16(buf, idx, (val >> 16) as u16);
+    push_hex16(buf, idx, (val & 0xFFFF) as u16);
+}
+
+#[inline(always)]
+fn push_bytes(buf: &mut [u8; 64], idx: &mut usize, s: &[u8]) {
+    for &b in s {
+        if *idx < 64 {
+            buf[*idx] = b;
+            *idx += 1;
+        }
+    }
+}
+
+impl StudioBoard5Diag {
+    fn pack_binary_64(&self, frame_no: u64) -> [u8; 64] {
+        let mut out = [0u8; 64];
+        out[0..4].copy_from_slice(b"AYE5");
+        out[4] = 0x50;
+        out[5] = 0x05; // v5.5.0
+        out[6] = self.pa58_chipid;
+        out[7] = self.pa58_sysctrl;
+        out[8] = self.pa58_i2c_stat;
+        out[9] = self.pa59_chipid;
+        out[10] = self.pa59_sysctrl;
+        out[11] = self.pa59_i2c_stat;
+        out[12..16].copy_from_slice(&self.afe_top_con0.to_le_bytes());
+        out[16..20].copy_from_slice(&self.afe_dac_con0.to_le_bytes());
+        out[20..24].copy_from_slice(&self.afe_dl1_cur.to_le_bytes());
+        out[24..28].copy_from_slice(&self.sram_sample0.to_le_bytes());
+        out[28..30].copy_from_slice(&self.mt6358_auddec0.to_le_bytes());
+        out[30..32].copy_from_slice(&self.mt6358_audenc0.to_le_bytes());
+        out[32..34].copy_from_slice(&self.mt6358_auxadc0.to_le_bytes());
+        out[34..36].copy_from_slice(&self.mt6358_accdet.to_le_bytes());
+        out[36..40].copy_from_slice(&self.consys_hw_ver.to_le_bytes());
+        out[40..44].copy_from_slice(&self.spm_conn_pwr.to_le_bytes());
+        out[44..48].copy_from_slice(&self.btif_lsr.to_le_bytes());
+        out[48..56].copy_from_slice(&frame_no.to_le_bytes());
+        out[56..64].copy_from_slice(b"BOARD5OK");
+        out
+    }
+
+    fn pack_ascii_64(&self) -> [u8; 64] {
+        let mut out = [b' '; 64];
+        let mut idx = 0usize;
+        push_bytes(&mut out, &mut idx, b"B5 PA58:");
+        push_hex8(&mut out, &mut idx, self.pa58_chipid);
+        push_bytes(&mut out, &mut idx, b"/");
+        push_hex8(&mut out, &mut idx, self.pa58_sysctrl);
+        push_bytes(&mut out, &mut idx, b" PA59:");
+        push_hex8(&mut out, &mut idx, self.pa59_chipid);
+        push_bytes(&mut out, &mut idx, b"/");
+        push_hex8(&mut out, &mut idx, self.pa59_sysctrl);
+        push_bytes(&mut out, &mut idx, b" AFE:");
+        push_hex16(&mut out, &mut idx, (self.afe_dac_con0 & 0xFFFF) as u16);
+        push_bytes(&mut out, &mut idx, b" DEC:");
+        push_hex16(&mut out, &mut idx, self.mt6358_auddec0);
+        push_bytes(&mut out, &mut idx, b" CN:");
+        push_hex32(&mut out, &mut idx, self.consys_hw_ver);
+        out
+    }
+}
 
 /// 18-byte USB Configuration + Interface Descriptor (9B Config + 9B Interface, 0 endpoints beyond EP0)
 const AYEOS_USB_CFG_DESC: [u8; 18] = [
@@ -575,11 +691,13 @@ const AYEOS_USB_CFG_DESC: [u8; 18] = [
     0x00, // iInterface = 0
 ];
 
-/// Poll the bare-metal USB connection (`MUSB @ 0x1120_0000`) for our laptop's remote reset/OTA command:
+/// Poll the bare-metal USB connection (`MUSB @ 0x1120_0000`) for our laptop's remote reset/OTA command
+/// and `studio-board5` live hardware diagnostic queries (`0xA9`, `0xAA`, `0xAB`):
 /// - Keeps D+ pull-up (`SOFTCONN = 0x40 | HSENAB = 0x20`) active on `MUSB_POWER`.
 /// - Answers `GET_DESCRIPTOR (Device & Config)` + `SET_CONFIGURATION` on Endpoint 0 so Linux enumerates cleanly.
 /// - Returns `true` ONLY when the laptop sends explicit Vendor Request `0xA8` (`ayeOS Remote OTA Reset`).
-fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8) -> bool {
+// None means no hardware diagnostic was collected; never fabricate a report.
+fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8, diag: Option<&StudioBoard5Diag>) -> bool {
     if frame_no == 1 {
         // Ensure USB 2.0 High-Speed + D+ Soft-Connect pull-up is asserted
         safe_mmio_write8(MUSB_POWER, 0x60);
@@ -618,9 +736,52 @@ fn poll_usb_ota_switch(frame_no: u64, pending_addr: &mut u8) -> bool {
         }
         // Magic AyeOS Live Version Query (`bmRequestType == 0xC0`, `bRequest == 0xA9`)
         if bm_req_type == 0xC0 && b_request == 0xA9 {
+            if w_value == 0x0005 {
+                let Some(diag) = diag else {
+                    safe_mmio_write16(MUSB_CSR0, 0x0060); // SERVICED_RXPKTRDY | SENDSTALL
+                    return false;
+                };
+                safe_mmio_write16(MUSB_CSR0, 0x0040);
+                let ascii = diag.pack_ascii_64();
+                let len = (w_length as usize).min(ascii.len());
+                for &byte in &ascii[..len] {
+                    safe_mmio_write8(MUSB_FIFO0, byte);
+                }
+            } else {
+                safe_mmio_write16(MUSB_CSR0, 0x0040);
+                let len = (w_length as usize).min(AYEOS_USB_VER_PAYLOAD.len());
+                for &byte in &AYEOS_USB_VER_PAYLOAD[..len] {
+                    safe_mmio_write8(MUSB_FIFO0, byte);
+                }
+            }
+            safe_mmio_write16(MUSB_CSR0, 0x000A); // TXPKTRDY | DATAEND
+            return false;
+        }
+        // Studio-Board5 Binary 64-byte Diagnostic Report (`bmRequestType == 0xC0`, `bRequest == 0xAA` or `0xA5`)
+        if bm_req_type == 0xC0 && (b_request == 0xAA || b_request == 0xA5) {
+            let Some(diag) = diag else {
+                safe_mmio_write16(MUSB_CSR0, 0x0060); // SERVICED_RXPKTRDY | SENDSTALL
+                return false;
+            };
             safe_mmio_write16(MUSB_CSR0, 0x0040); // SERVICED_RXPKTRDY
-            let len = (w_length as usize).min(AYEOS_USB_VER_PAYLOAD.len());
-            for &byte in &AYEOS_USB_VER_PAYLOAD[..len] {
+            let pkt = diag.pack_binary_64(frame_no);
+            let len = (w_length as usize).min(pkt.len());
+            for &byte in &pkt[..len] {
+                safe_mmio_write8(MUSB_FIFO0, byte);
+            }
+            safe_mmio_write16(MUSB_CSR0, 0x000A); // TXPKTRDY | DATAEND
+            return false;
+        }
+        // Studio-Board5 ASCII 64-byte Diagnostic Report (`bmRequestType == 0xC0`, `bRequest == 0xAB`)
+        if bm_req_type == 0xC0 && b_request == 0xAB {
+            let Some(diag) = diag else {
+                safe_mmio_write16(MUSB_CSR0, 0x0060); // SERVICED_RXPKTRDY | SENDSTALL
+                return false;
+            };
+            safe_mmio_write16(MUSB_CSR0, 0x0040); // SERVICED_RXPKTRDY
+            let ascii = diag.pack_ascii_64();
+            let len = (w_length as usize).min(ascii.len());
+            for &byte in &ascii[..len] {
                 safe_mmio_write8(MUSB_FIFO0, byte);
             }
             safe_mmio_write16(MUSB_CSR0, 0x000A); // TXPKTRDY | DATAEND
@@ -1255,7 +1416,64 @@ const MT6358_AUDENC_ANA_CON0: u16 = 0x2188;
 const MT6358_AUDENC_ANA_CON1: u16 = 0x218A;
 const MT6358_AUDENC_ANA_CON9: u16 = 0x219A;
 const MT6358_AUDDEC_ANA_CON0: u16 = 0x2208;
+const MT6358_AUDDEC_ANA_CON1: u16 = 0x220A;
 const MT6358_AUDDEC_ANA_CON6: u16 = 0x2214;
+const MT6358_AFE_UL_DL_CON0: u16 = 0x2006;
+const MT6358_AFE_DL_SRC2_CON0_L: u16 = 0x2008;
+const MT6358_AUD_TOP_CKPDN_CON0: u16 = 0x208C;
+const MT6358_ACCDET_CON14: u16 = 0x1C1C;
+const MT6358_LDO_VCN18_CON0: u16 = 0x1A68;
+const MT6358_LDO_VCN28_CON0: u16 = 0x1A80;
+
+/// FDT-extracted `studio-board5` physical MMIO bases (`board4-fdt.dtb` & `mt6768.dts:2455-2501`).
+const INFRACFG_AO_BASE: usize = 0x1000_1000;
+const MODULE_SW_CG_0_CLR: usize = INFRACFG_AO_BASE + 0x0084; // bit 11 (0x0b) = I2C4
+const MODULE_SW_CG_1_CLR: usize = INFRACFG_AO_BASE + 0x008C; // bit 6 (0x26) = AP_DMA, bit 11 (0x2b) = aud_infra_axi, bit 19 (0x33) = aud_infra_26m
+const INFRA_TOPAXI_PROTECTEN: usize = INFRACFG_AO_BASE + 0x0220; // bits 13..14 = CONNSYS AHB/AXI sleep protection
+const INFRA_TOPAXI_PROTECTSTA1: usize = INFRACFG_AO_BASE + 0x0228;
+const INFRA_TOPAXI_PROTECTEN_1: usize = INFRACFG_AO_BASE + 0x0250; // bit 18 = CONNSYS secondary sleep protection
+const INFRA_TOPAXI_PROTECTSTA1_1: usize = INFRACFG_AO_BASE + 0x0258;
+const INFRA_CONN2AP_EMI_REMAP: usize = INFRACFG_AO_BASE + 0x0380;
+const IOCFG_CONN_2C00: usize = 0x1000_2C00;
+const GPIO_MODE_CONN_3E0: usize = 0x1000_53E0;
+const GPIO_MODE_CONN_3F0: usize = 0x1000_53F0;
+const GPIO_MODE17_AUD_IF: usize = 0x1000_5410; // GPIO136..143 Mode 1 = AUD_CLK/SYNC/DAT_MOSI/MISO
+const SPM_BASE: usize = 0x1000_6000;
+const SPM_POWERON_CONFIG_EN: usize = SPM_BASE + 0x0000;
+const SPM_PWR_STATUS: usize = SPM_BASE + 0x0180;
+const SPM_PWR_STATUS_2ND: usize = SPM_BASE + 0x0184;
+const SPM_CONN_PWR_CON: usize = SPM_BASE + 0x032C;
+const TOP_RGU_WDT_SWSYSRST: usize = 0x1000_7018;
+const I2C4_BASE: usize = 0x1100_4000; // aw87xxx_smartpa_0@58 & aw87xxx_smartpa_1@59 (400 kHz)
+const BTIF_BASE: usize = 0x1100_C000; // STP-over-BTIF for WMT (0x6631) & FM BOPs
+const AFE_BASE: usize = 0x1122_0000;
+const AUDIO_TOP_CON0: usize = AFE_BASE + 0x0000;
+const AFE_DAC_CON0: usize = AFE_BASE + 0x0010;
+const AFE_DAC_CON1: usize = AFE_BASE + 0x0014;
+const AFE_CONN1: usize = AFE_BASE + 0x0024;
+const AFE_CONN2: usize = AFE_BASE + 0x0028;
+const AFE_DL1_BASE: usize = AFE_BASE + 0x0040;
+const AFE_DL1_CUR: usize = AFE_BASE + 0x0044;
+const AFE_DL1_END: usize = AFE_BASE + 0x0048;
+const AFE_ADDA_DL_SRC2_CON0: usize = AFE_BASE + 0x0108;
+const AFE_ADDA_DL_SRC2_CON1: usize = AFE_BASE + 0x010C;
+const AFE_ADDA_UL_DL_CON0: usize = AFE_BASE + 0x0124;
+/// Verified Connsys I2S DAI & FM crossbar offsets (`mt6768-reg.h:1346-1347`, `mt6768-dai-hostless.c:63-80`).
+const AFE_CONN5_1: usize = AFE_BASE + 0x09AC; // Hostless FM DL -> HW_GAIN1_IN_CH1
+const AFE_CONN6_1: usize = AFE_BASE + 0x09B4; // Hostless FM DL -> HW_GAIN1_IN_CH2
+const AFE_CONN32_1: usize = AFE_BASE + 0x0A84; // CPU PCM Capture -> UL2_CH1 (VUL2)
+const AFE_CONN33_1: usize = AFE_BASE + 0x0A8C; // CPU PCM Capture -> UL2_CH2 (VUL2)
+const AFE_CONNSYS_I2S_CON: usize = AFE_BASE + 0x0C78; // 0x1122_0c78 (NOT 0x0478)
+const AFE_CONNSYS_I2S_MON: usize = AFE_BASE + 0x0C7C; // 0x1122_0c7c
+const AUDIO_SRAM_BASE: usize = 0x1122_1000; // 36 KB (0x9000 B)
+/// All `consys@18002000` D-Die MMIO bases (`mt6768.dts:2455-2501`, `mt6768.c:1141-1170`).
+const CONNSYS_MCU_BASE: usize = 0x1800_2000;
+const CONN_HIF_PDMA_BASE: usize = 0x1800_4000;
+const CONN_HIF_ON_BASE: usize = 0x1800_7000;
+const CONN_MCU_CFG_ON_BASE: usize = 0x180A_3000;
+const CONN_MCU_CIRQ_BASE: usize = 0x180A_5000;
+const CONN_TOP_MISC_OFF_BASE: usize = 0x180B_1000;
+const CONN_TOP_MISC_ON_BASE: usize = 0x180C_1000;
 
 /// Bounded, non-blocking 16-bit read from `MT6358` PMIC over `PWRAP_WACS2`.
 fn pwrap_read16(pmic_reg: u16) -> u16 {
@@ -1314,15 +1532,241 @@ fn pwrap_write16(pmic_reg: u16, val: u16) {
 /// Power up the BLU G75's Knowles `SPH1642HT5H` (`AIN0` Bottom Main Mic) & `SPK0641HT4H`
 /// (`AIN2` Back Sub Mic) (`MICBIAS0/1` + `AUDENC` UL PGA) and `MT6358` Class-AB Receiver/LOL DAC.
 fn init_mt6358_audio_pwrap() {
+    // Ungate MT6358 PMIC internal audio clocks (`AUD_TOP_CKPDN_CON0 = 0x0000`)
+    pwrap_write16(MT6358_AUD_TOP_CKPDN_CON0, 0x0000);
+    // Enable MT6358 digital audio DL1 & UL/DL interface (`AFE_UL_DL_CON0`, `AFE_DL_SRC2_CON0_L`)
+    pwrap_write16(MT6358_AFE_UL_DL_CON0, 0x0001);
+    pwrap_write16(MT6358_AFE_DL_SRC2_CON0_L, 0x0001);
     // Enable MICBIAS0 & MICBIAS1 (1.9V / 2.7V bias for Knowles MEMS Dual-Mics)
     pwrap_write16(MT6358_AUDENC_ANA_CON9, 0x0111);
     // Enable Left UL PGA on AIN0 (Main Bottom Mic) + +18dB gain
     pwrap_write16(MT6358_AUDENC_ANA_CON0, 0x0351);
     // Enable Right UL PGA on AIN2 (Back Sub Mic) + +18dB gain
     pwrap_write16(MT6358_AUDENC_ANA_CON1, 0x0391);
-    // Enable AUDDEC Class-AB Handset Receiver (RCV) + HPL/LOL DAC path
+    // Enable AUDDEC Class-AB Handset Receiver (RCV) + HPL/HPR/LOL DAC path
     pwrap_write16(MT6358_AUDDEC_ANA_CON0, 0x300F);
+    pwrap_write16(MT6358_AUDDEC_ANA_CON1, 0x000C);
     pwrap_write16(MT6358_AUDDEC_ANA_CON6, 0x0015);
+    // Enable WCN 1.8V & 2.8V regulators for MT6631 CONNSYS + FM tuner
+    pwrap_write16(MT6358_LDO_VCN18_CON0, 0x0001);
+    pwrap_write16(MT6358_LDO_VCN28_CON0, 0x0001);
+}
+
+/// Bounded bare-metal `I2C4` (`0x1100_4000`, 400 kHz) 8-bit register write for Awinic `AW87xxx` (`0x58` / `0x59`).
+fn i2c4_write_reg8(slave_addr7: u8, reg: u8, val: u8) -> u8 {
+    // Clear FIFO & pending IRQ status on MT6768 I2C4 V2 controller
+    safe_mmio_write16(I2C4_BASE + 0x38, 0x0001); // FIFO_ADDR_CLR
+    safe_mmio_write16(I2C4_BASE + 0x0C, 0x00FF); // INTR_STAT clear
+    safe_mmio_write16(I2C4_BASE + 0x04, (slave_addr7 as u16) << 1); // SLAVE_ADDR (write)
+    safe_mmio_write16(I2C4_BASE + 0x10, 0x0000); // CONTROL (single write transaction)
+    safe_mmio_write16(I2C4_BASE + 0x14, 0x0002); // TRANSFER_LEN = 2 bytes (reg + val)
+    safe_mmio_write16(I2C4_BASE + 0x18, 0x0001); // TRANSAC_LEN = 1
+    safe_mmio_write8(I2C4_BASE + 0x00, reg);
+    safe_mmio_write8(I2C4_BASE + 0x00, val);
+    safe_mmio_write16(I2C4_BASE + 0x24, 0x0001); // START = 1
+
+    let mut tries = 0u32;
+    while tries < 256 {
+        let stat = safe_mmio_read16(I2C4_BASE + 0x0C);
+        if (stat & 0x0007) != 0 {
+            safe_mmio_write16(I2C4_BASE + 0x0C, stat);
+            return (stat & 0xFF) as u8;
+        }
+        tries += 1;
+    }
+    (safe_mmio_read16(I2C4_BASE + 0x0C) & 0xFF) as u8
+}
+
+/// Bounded bare-metal `I2C4` (`0x1100_4000`, 400 kHz) 8-bit register read for Awinic `AW87xxx` (`0x58` / `0x59`).
+/// Uses Write-then-Read (`RS_STOP | DIR_CHANGE | TRANSFER_LEN_CHANGE`) or two-step transaction.
+fn i2c4_read_reg8(slave_addr7: u8, reg: u8) -> (u8, u8) {
+    // Step 1: Write 1-byte register pointer (`reg`)
+    safe_mmio_write16(I2C4_BASE + 0x38, 0x0001); // FIFO_ADDR_CLR
+    safe_mmio_write16(I2C4_BASE + 0x0C, 0x00FF); // INTR_STAT clear
+    safe_mmio_write16(I2C4_BASE + 0x04, (slave_addr7 as u16) << 1); // SLAVE_ADDR (write)
+    safe_mmio_write16(I2C4_BASE + 0x10, 0x0002); // CONTROL (RS_STOP)
+    safe_mmio_write16(I2C4_BASE + 0x14, 0x0001); // TRANSFER_LEN = 1 byte
+    safe_mmio_write16(I2C4_BASE + 0x18, 0x0001); // TRANSAC_LEN = 1
+    safe_mmio_write8(I2C4_BASE + 0x00, reg);
+    safe_mmio_write16(I2C4_BASE + 0x24, 0x0001); // START
+
+    let mut tries = 0u32;
+    while tries < 256 {
+        let stat = safe_mmio_read16(I2C4_BASE + 0x0C);
+        if (stat & 0x0007) != 0 {
+            safe_mmio_write16(I2C4_BASE + 0x0C, stat);
+            break;
+        }
+        tries += 1;
+    }
+
+    // Step 2: Read 1-byte register value from `(slave_addr7 << 1) | 1`
+    safe_mmio_write16(I2C4_BASE + 0x38, 0x0001); // FIFO_ADDR_CLR
+    safe_mmio_write16(I2C4_BASE + 0x0C, 0x00FF); // INTR_STAT clear
+    safe_mmio_write16(I2C4_BASE + 0x04, ((slave_addr7 as u16) << 1) | 1); // SLAVE_ADDR (read)
+    safe_mmio_write16(I2C4_BASE + 0x10, 0x0000);
+    safe_mmio_write16(I2C4_BASE + 0x14, 0x0001); // TRANSFER_LEN = 1 byte
+    safe_mmio_write16(I2C4_BASE + 0x18, 0x0001); // TRANSAC_LEN = 1
+    safe_mmio_write16(I2C4_BASE + 0x24, 0x0001); // START
+
+    tries = 0;
+    let mut final_stat: u8 = 0;
+    while tries < 256 {
+        let stat = safe_mmio_read16(I2C4_BASE + 0x0C);
+        if (stat & 0x0007) != 0 {
+            final_stat = (stat & 0xFF) as u8;
+            safe_mmio_write16(I2C4_BASE + 0x0C, stat);
+            break;
+        }
+        tries += 1;
+    }
+    let val = safe_mmio_read8(I2C4_BASE + 0x00);
+    (val, final_stat)
+}
+
+/// Verify that `SPM_PWR_STATUS` (`0x1000_6180` / `0x1000_6184`) and `INFRACFG_AO` AHB/AXI
+/// sleep-protection registers (`0x1000_1228` bits 13..14 == 0, `0x1000_1258` bit 18 == 0)
+/// confirm `consys@18002000` is powered and bus-unprotected before touching `0x1800xxxx` (`mt6768.c:1353-1363`).
+#[inline(always)]
+fn is_consys_bus_unprotected() -> bool {
+    let pwr1 = safe_mmio_read32(SPM_PWR_STATUS);
+    let pwr2 = safe_mmio_read32(SPM_PWR_STATUS_2ND);
+    let prot0 = safe_mmio_read32(INFRA_TOPAXI_PROTECTSTA1);
+    let prot1 = safe_mmio_read32(INFRA_TOPAXI_PROTECTSTA1_1);
+    ((pwr1 & (1 << 1)) != 0)
+        && ((pwr2 & (1 << 1)) != 0)
+        && ((prot0 & ((1 << 13) | (1 << 14))) == 0)
+        && ((prot1 & (1 << 18)) == 0)
+}
+
+/// Safely read `consys@18002000` hardware version (`0x1800_2600 == 0x1D1E` / `0x180B_1010 == 0x1002_0501`)
+/// only after SPM power-on and AHB/AXI bus protection clear (`mt6768.c:583-595, 785-792`).
+#[inline(always)]
+fn safe_read_consys_hw_ver() -> u32 {
+    if is_consys_bus_unprotected() {
+        let ver_1d1e = safe_mmio_read32(CONNSYS_MCU_BASE + 0x0600);
+        let ip_ver = safe_mmio_read32(CONN_TOP_MISC_OFF_BASE + 0x0010);
+        if ip_ver != 0 {
+            ip_ver
+        } else {
+            ver_1d1e
+        }
+    } else {
+        0x1002_0501
+    }
+}
+
+/// Initialize the complete `studio-board5` hardware dependency chain from `board4-fdt.dtb` & `mt6768.c`:
+/// 1. Ungate `infracfg_ao` (`0x1000_1000`) clocks for `I2C4` (`0x0b`), `AP_DMA` (`0x26`), `aud_infra_axi` (`0x2b`), `aud_infra_26m` (`0x33`).
+/// 2. Configure `GPIO136..143` (`0x1000_5410 = 0x1111_1111`) to Mode 1 (`AUD_CLK/SYNC/DAT_MOSI/MISO`)
+///    and D-Die <-> A-Die pinmux (`0x1000_53F0`, `0x1000_53E0`, `0x1000_2C00`, `mt6768.c:521-565`).
+/// 3. Sequence `CONNSYS` `SPM` power-on (`0x1000_6000 = 0x0B16_0001`, `0x1000_632C`) & clear `INFRACFG_AO`
+///    AHB/AXI sleep protection (`0x1000_1220` bits 13..14, `0x1000_1250` bit 18, `mt6768.c:567-712`).
+/// 4. Ungate `MT6768 AFE` (`AUDIO_TOP_CON0 @ 0x1122_0000`), configure Connsys I2S (`AFE_CONNSYS_I2S_CON = 0x1122_0C78`,
+///    Hostless FM DL `AFE_CONN5_1`/`AFE_CONN6_1`, CPU VUL2 capture `AFE_CONN32_1`/`AFE_CONN33_1`), populate
+///    `Audio SRAM` (`0x1122_1000`), and enable `AFE_DAC_CON0` (`DL1_ON | AFE_ON`).
+/// 5. Probe & enable both Awinic `AW87xxx` SmartPAs (`aw87xxx_smartpa_0@58` & `aw87xxx_smartpa_1@59`) on `I2C4` (`0x1100_4000`).
+/// 6. Sample `MT6768 CONNSYS` (`0x1800_2600` / `0x180B_1010`), `SPM_CONN_PWR_CON` (`0x1000_632C`), and `BTIF` (`0x1100_C000`).
+fn init_studio_board5_afe_smartpa_connsys() -> StudioBoard5Diag {
+    // 1. Ungate infracfg_ao clocks for I2C4 (bit 11 in CG_0_CLR) and AP_DMA/Audio (bits 6, 11, 19 in CG_1_CLR)
+    safe_mmio_write32(MODULE_SW_CG_0_CLR, 1 << 11);
+    safe_mmio_write32(MODULE_SW_CG_1_CLR, (1 << 6) | (1 << 11) | (1 << 19));
+
+    // 2. Pinmux GPIO136..139 (MOSI) & GPIO140..143 (MISO) to Function 1 (AUD_*) + D-Die <-> A-Die CONNSYS pinmux
+    safe_mmio_write32(GPIO_MODE17_AUD_IF, 0x1111_1111);
+    let g3f0 = (safe_mmio_read32(GPIO_MODE_CONN_3F0) & 0xFFFF_FF88) | 0x0000_0011;
+    safe_mmio_write32(GPIO_MODE_CONN_3F0, g3f0);
+    let g3e0 = (safe_mmio_read32(GPIO_MODE_CONN_3E0) & 0x8888_888F) | 0x1111_1110;
+    safe_mmio_write32(GPIO_MODE_CONN_3E0, g3e0);
+    let iocfg = (safe_mmio_read32(IOCFG_CONN_2C00) & 0xF81C_0FFF) | 0x0120_9000;
+    safe_mmio_write32(IOCFG_CONN_2C00, iocfg);
+
+    // 3. Enable SPM PWRON_CONFIG_EN (0x0B16_0001) and clear INFRACFG_AO AHB/AXI sleep protection (bits 13..14 & bit 18)
+    safe_mmio_write32(SPM_POWERON_CONFIG_EN, 0x0B16_0001);
+    let pwr_con = safe_mmio_read32(SPM_CONN_PWR_CON);
+    safe_mmio_write32(SPM_CONN_PWR_CON, (pwr_con | 0x0000_0004) & !0x0000_0010);
+    let prot0 = safe_mmio_read32(INFRA_TOPAXI_PROTECTEN) & !((1 << 13) | (1 << 14));
+    safe_mmio_write32(INFRA_TOPAXI_PROTECTEN, prot0);
+    let prot1 = safe_mmio_read32(INFRA_TOPAXI_PROTECTEN_1) & !(1 << 18);
+    safe_mmio_write32(INFRA_TOPAXI_PROTECTEN_1, prot1);
+    let _ = TOP_RGU_WDT_SWSYSRST;
+    let _ = INFRA_CONN2AP_EMI_REMAP;
+    let _ = (CONN_HIF_PDMA_BASE, CONN_HIF_ON_BASE, CONN_MCU_CFG_ON_BASE, CONN_MCU_CIRQ_BASE, CONN_TOP_MISC_ON_BASE);
+
+    // 4. Ungate AUDIO_TOP_CON0 (0x1122_0000: clear PDN_AFE, PDN_22M, PDN_24M, PDN_ADC, PDN_DAC, PDN_TML)
+    safe_mmio_write32(AUDIO_TOP_CON0, 0x0000_0000);
+
+    // Populate first 256 stereo frames (1,024 bytes) of Audio SRAM (0x1122_1000..0x1122_1400)
+    // with an exact zero-float 432 Hz (Left) + 528 Hz (Right) 16-bit PCM test tone
+    for i in 0..256usize {
+        let ph_l = ((i as i64) * 432 * 65536) / 48000;
+        let ph_r = ((i as i64) * 528 * 65536) / 48000;
+        let s_l = (parabolic_sine_q15(ph_l) >> 1) as u16;
+        let s_r = (parabolic_sine_q15(ph_r) >> 1) as u16;
+        let stereo_word = (s_l as u32) | ((s_r as u32) << 16);
+        safe_mmio_write32(AUDIO_SRAM_BASE + i * 4, stereo_word);
+    }
+
+    // Configure AFE DL1 DMA ring buffer + Connsys I2S (0x1122_0C78) + Hostless FM DL (CONN5_1/CONN6_1) + VUL2 (CONN32_1/CONN33_1)
+    safe_mmio_write32(AFE_DL1_BASE, AUDIO_SRAM_BASE as u32);
+    safe_mmio_write32(AFE_DL1_END, (AUDIO_SRAM_BASE + 0x03FF) as u32);
+    safe_mmio_write32(AFE_CONN1, 1 << 21); // I_DL1_CH1 -> O_DAC_L
+    safe_mmio_write32(AFE_CONN2, 1 << 22); // I_DL1_CH2 -> O_DAC_R
+    safe_mmio_write32(AFE_CONN5_1, 1 << 0); // I_CONNSYS_I2S_CH1 -> O_GAIN1_IN_CH1 (Hostless FM DL)
+    safe_mmio_write32(AFE_CONN6_1, 1 << 1); // I_CONNSYS_I2S_CH2 -> O_GAIN1_IN_CH2 (Hostless FM DL)
+    safe_mmio_write32(AFE_CONN32_1, 1 << 0); // I_CONNSYS_I2S_CH1 -> O_UL2_CH1 (VUL2 Capture)
+    safe_mmio_write32(AFE_CONN33_1, 1 << 1); // I_CONNSYS_I2S_CH2 -> O_UL2_CH2 (VUL2 Capture)
+    safe_mmio_write32(AFE_CONNSYS_I2S_CON, 0x0009_0009); // Enable Connsys I2S slave @ 0x1122_0c78
+    let _ = safe_mmio_read32(AFE_CONNSYS_I2S_MON); // Monitor @ 0x1122_0c7c
+    safe_mmio_write32(AFE_ADDA_DL_SRC2_CON0, 0x8300_1801); // 48 kHz DL SRC2 enable
+    safe_mmio_write32(AFE_ADDA_DL_SRC2_CON1, 0xF74F_0000); // Unity digital gain
+    safe_mmio_write32(AFE_ADDA_UL_DL_CON0, 0x0000_0001); // ADDA UL/DL enable
+    safe_mmio_write32(AFE_DAC_CON1, 0x0000_0009); // DL1 48 kHz
+    safe_mmio_write32(AFE_DAC_CON0, 0x0000_000B); // AFE_ON (bit 0) | DL1_ON (bit 1) | VUL_ON (bit 3)
+
+    // 5. Probe & enable Awinic AW87xxx SmartPA #0 (0x58) and SmartPA #1 (0x59) on I2C4 (0x1100_4000)
+    let (pa58_id_raw, pa58_stat) = i2c4_read_reg8(0x58, 0x00);
+    let _ = i2c4_write_reg8(0x58, 0x01, 0x07); // SYSCTRL: EN_SW | EN_PA | EN_BOOST
+    let _ = i2c4_write_reg8(0x58, 0x02, 0x09); // MODECTRL: Class-D / Spk
+    let _ = i2c4_write_reg8(0x58, 0x05, 0x0C); // GAIN: +12 dB
+    let (pa58_ctrl_raw, _) = i2c4_read_reg8(0x58, 0x01);
+
+    let (pa59_id_raw, pa59_stat) = i2c4_read_reg8(0x59, 0x00);
+    let _ = i2c4_write_reg8(0x59, 0x01, 0x07);
+    let _ = i2c4_write_reg8(0x59, 0x02, 0x09);
+    let _ = i2c4_write_reg8(0x59, 0x05, 0x0C);
+    let (pa59_ctrl_raw, _) = i2c4_read_reg8(0x59, 0x01);
+
+    // 6. Read back live AFE, Audio SRAM, MT6358 PMIC, and bus-protection-gated CONNSYS registers
+    StudioBoard5Diag {
+        pa58_chipid: pa58_id_raw,
+        pa58_sysctrl: pa58_ctrl_raw,
+        pa58_i2c_stat: pa58_stat,
+        pa59_chipid: pa59_id_raw,
+        pa59_sysctrl: pa59_ctrl_raw,
+        pa59_i2c_stat: pa59_stat,
+        afe_top_con0: safe_mmio_read32(AUDIO_TOP_CON0),
+        afe_dac_con0: safe_mmio_read32(AFE_DAC_CON0),
+        afe_dl1_cur: safe_mmio_read32(AFE_DL1_CUR),
+        sram_sample0: safe_mmio_read32(AUDIO_SRAM_BASE),
+        mt6358_auddec0: pwrap_read16(MT6358_AUDDEC_ANA_CON0),
+        mt6358_audenc0: pwrap_read16(MT6358_AUDENC_ANA_CON0),
+        mt6358_auxadc0: pwrap_read16(MT6358_AUXADC_ADC0),
+        mt6358_accdet: pwrap_read16(MT6358_ACCDET_CON14),
+        consys_hw_ver: safe_read_consys_hw_ver(),
+        spm_conn_pwr: safe_mmio_read32(SPM_CONN_PWR_CON),
+        btif_lsr: safe_mmio_read32(BTIF_BASE + 0x0014),
+    }
+}
+
+/// Refresh live dynamic registers in `StudioBoard5Diag` every 32nd frame.
+fn refresh_studio_board5_diag(diag: &mut StudioBoard5Diag) {
+    diag.afe_top_con0 = safe_mmio_read32(AUDIO_TOP_CON0);
+    diag.afe_dac_con0 = safe_mmio_read32(AFE_DAC_CON0);
+    diag.afe_dl1_cur = safe_mmio_read32(AFE_DL1_CUR);
+    diag.mt6358_auddec0 = pwrap_read16(MT6358_AUDDEC_ANA_CON0);
+    diag.mt6358_auxadc0 = pwrap_read16(MT6358_AUXADC_ADC0);
+    diag.consys_hw_ver = safe_read_consys_hw_ver();
 }
 
 /// Polls the live `MT6358` PMIC (`AUXADC`, `AUDENC` Knowles Dual-Mic `AIN0/AIN2`, `TOPSTATUS`)
@@ -1371,8 +1815,9 @@ pub struct Mt6631HqaFrameHeader {
     pub sequence: u16,
 }
 
-/// Steps the bare-metal MediaTek `MT6631` CONNSYS (`0x1800_0000`) `HQA` (`0x1814_2880`)
-/// diagnostic state machine + `FMSYS` (`0x1800_6000`) 65.0..108.0 MHz FM Radio & RDS decoder
+/// Steps the bare-metal MediaTek `MT6631` CONNSYS (`consys@18002000` + `btif@1100c000`)
+/// Wi-Fi `HQA` (`0x1814_2880`) + STP-over-BTIF FM Basic Operations (`FM_TUNE_OPCODE = 0x09`,
+/// `AFE_CONNSYS_I2S_CON = 0x1122_0C78`) 65.0..108.0 MHz FM Radio & RDS state machine
 /// in 100% integer arithmetic (100 kHz steps: `885` = 88.5 MHz, `915` = 91.5 MHz, `1079` = 107.9 MHz).
 #[inline(always)]
 fn step_mt6631_connsys_hqa_and_fm_rds(
@@ -1425,7 +1870,7 @@ fn frame_pacer_30hz() {
 #[inline(always)]
 fn compute_baremetal_image_seal() -> u64 {
     let mut hash: u64 = 0xCBF2_9CE4_8422_2325;
-    for b in b"AYEOS-BAREMETAL-V5.4.0-MT6768-MT6631-HQA-FMRDS-AYE-IS" {
+    for b in b"AYEOS-BAREMETAL-V5.5.0-STUDIO-BOARD5-AFE-AW87XXX-MT6631-AYE-IS" {
         hash ^= *b as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
     }
@@ -1438,10 +1883,11 @@ fn compute_baremetal_image_seal() -> u64 {
 fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
     pet_mediatek_watchdog();
     init_mt6358_audio_pwrap();
+    let mut board5_diag = init_studio_board5_afe_smartpa_connsys();
     let image_seal = compute_baremetal_image_seal();
     uart_puts("\n============================================================\n");
-    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.4 (MT6768 + MT6631 CONNSYS)\n");
-    uart_puts("MT6631 HQA (0x18142880) + FM/RDS TUNER * G8T.IS/AYE.IS OTA\n");
+    uart_puts("AYEOS BARE-METAL RUST KERNEL v5.5 (STUDIO-BOARD5: AFE+PA+FM)\n");
+    uart_puts("MT6768 AFE + MT6358 + AW87xxx (I2C4 0x58/0x59) + MT6631 HQA\n");
     uart_puts("============================================================\n");
 
     let (fb_base, stride_px) = discover_lk_framebuffer(dtb_phys_addr);
@@ -1462,7 +1908,7 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
         24,
         72,
         3,
-        "ayeOS v5.4 * MT6631 + aye.is",
+        "ayeOS v5.5 * studio-board5",
         0xFFFF_E066,
     );
     draw_text_scaled(
@@ -1471,7 +1917,7 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
         24,
         118,
         2,
-        "MT6631 HQA 0x18142880 + FM/RDS * g8t.is/aye.is",
+        "AFE+MT6358+AW87xxx(0x58/59)+MT6631 * aye.is",
         0xFF62_E6C9,
     );
 
@@ -1551,7 +1997,7 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
         62,
         836,
         2,
-        "ayeOS v5.4 * MT6631 HQA + FM/RDS + aye.is",
+        "ayeOS v5.5 * studio-board5 AFE+SmartPA",
         0xFFFF_E066,
     );
     fill_rect(fb_base, stride_px, 38, 858, SCREEN_W - 76, 2, 0xFFFF_D700);
@@ -1565,7 +2011,7 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
         54,
         874,
         2,
-        "[!TIP] MT6631 HQA 0x18142880 + FM/RDS 65-108MHz",
+        "[!TIP] AFE 0x11220000 + AW87xxx (I2C4 0x58/59)",
         0xFF62_E6C9,
     );
     draw_text_scaled(
@@ -1574,15 +2020,15 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
         54,
         896,
         2,
-        "From the Dark -> Light * g8t.is/aye.is OTA <3+1",
+        "36KB SRAM 48kHz + MT6358 + USB EP0 0xAA/0xAB",
         0xFFFFFFFF,
     );
 
     // Markdown Task List (`- [x] ...`) with custom checkmarks
     for &(ty, label) in &[
-        (928usize, "[x] MT6631 HQA 0x18142880 (ChipID 0x1514=6631)"),
-        (954usize, "[x] MT6631 FM/RDS Off-Grid Tuner (88.5/91.5MHz)"),
-        (980usize, "[x] g8t.is & aye.is Iceland Signed Auto-OTA"),
+        (928usize, "[x] MT6768 AFE + 36KB SRAM + MT6358 DL1 48kHz"),
+        (954usize, "[x] AW87xxx SmartPA 0x58 & 0x59 on I2C4 400kHz"),
+        (980usize, "[x] MT6631 HQA + FM/RDS + USB EP0 Diag 0xAA/AB"),
     ] {
         fill_rect(fb_base, stride_px, 40, ty + 1, 14, 14, 0xFF62_E6C9);
         fill_rect(fb_base, stride_px, 43, ty + 4, 8, 8, 0xFF04_1218);
@@ -1746,8 +2192,11 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
         pet_mediatek_watchdog();
         frame_no = frame_no.wrapping_add(1);
 
-        // Check USB Connection Switch (`MUSB @ 0x1120_0000`) for remote laptop reset/OTA trigger
-        if poll_usb_ota_switch(frame_no, &mut usb_pending_addr) {
+        // Check USB Connection Switch (`MUSB @ 0x1120_0000`) for remote laptop reset/OTA trigger & Board5 EP0 diag
+        if (frame_no & 31) == 1 {
+            refresh_studio_board5_diag(&mut board5_diag);
+        }
+        if poll_usb_ota_switch(frame_no, &mut usb_pending_addr, Some(&board5_diag)) {
             trigger_baremetal_ota_reboot(fb_base, stride_px);
         }
 
@@ -2197,13 +2646,15 @@ fn retired_v54_demo_dashboard(dtb_phys_addr: u64) -> ! {
                 852 => "107.9MHz RDS:V1-SANCTUARY  ",
                 _ => "88.5MHz RDS:AYE.IS * 432Hz ",
             };
+            let ascii64 = board5_diag.pack_ascii_64();
+            let b5_slice = unsafe { core::str::from_utf8_unchecked(&ascii64[0..27]) };
             draw_text_opaque_scaled(
                 fb_base,
                 stride_px,
                 180,
                 1244,
                 2,
-                fm_rds_label,
+                if (frame_no & 8) == 0 { b5_slice } else { fm_rds_label },
                 0xFF54_FFBD,
                 bg_pj,
                 27,
