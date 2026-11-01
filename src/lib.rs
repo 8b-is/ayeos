@@ -1,9 +1,15 @@
 pub mod boot_mt6768;
+pub mod genesis;
 pub mod memnet;
 pub mod mt6631;
 pub mod phoenix_audio;
 pub mod prng;
 pub mod quant;
+
+pub use genesis::{
+    cap_mask, derive_learning_genesis, encode_memnet_frame, verify_memnet_frame, CapabilityTicket,
+    SovereignProfileVault, ENTROPY_TRACK, ENTROPY_URI, LEARNING_AXIOM, MEMNET_HEADER_LEN,
+};
 
 pub use memnet::{
     evaluate_stream_delivery, genesis_node, relevance_score, FeedbackSource, InterestProfile,
