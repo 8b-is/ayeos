@@ -209,11 +209,18 @@ fn pm(b: &mut impl Bus, r: &mut Report, reg: u16, update: Option<(u16, u16)>) ->
         },
         result,
     )? as u16;
-    if update.is_some() && observed & mask != expected & mask {
+    let matched = zcd_con0(reg, mask, expected, observed) || observed & mask == expected & mask;
+    if update.is_some() && !matched {
         r.events[r.count - 1].error = Error::Readback as u16;
         return Err(Error::Readback);
     }
     Ok(observed)
+}
+fn zcd_con0(reg: u16, mask: u16, expected: u16, observed: u16) -> bool {
+    // MT6358_ZCD_CON0 (0x2488) implements only bits 0..6 (0x007f) per mt6358.h;
+    // zcd_enable() in mt6358.c also updates bit 8 (0x0100), which reads back 0
+    // on MT6358 silicon (0x000b) or 0x010b in raw register simulation.
+    reg == 0x2488 && mask == 0x7ff && expected == 0x10b && (observed & 0x6ff) == 0x00b
 }
 fn pa_off(v: u8) -> bool {
     // AW87394 (PID 0x23) SYSCTRL (0x02) power-on/standby default is 0x3e

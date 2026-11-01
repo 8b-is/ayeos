@@ -161,7 +161,10 @@ def decode(data):
             if kind in (2, 4) and phase not in (1, 2, 3):
                 raise ValueError("invalid write phase")
             pa_off = kind in (3, 4) and addr in (0x5802, 0x5902) and expected == 0
-            matched = actual in (0, 0x3e) if pa_off else actual & mask == expected & mask
+            zcd_con0 = kind == 2 and addr == 0x2488 and mask == 0x7ff and expected == 0x10b
+            matched = (actual in (0, 0x3e) if pa_off else
+                       actual & 0x6ff == 0x00b if zcd_con0 else
+                       actual & mask == expected & mask)
             if error == 10 and matched:
                 raise ValueError("readback error has matching observation")
         elif (addr or mask or phase not in (0, 1, 3) or error == 10

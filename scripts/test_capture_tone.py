@@ -82,6 +82,13 @@ class Tone(unittest.TestCase):
             kind, addr, expected = b3e[at + 8], struct.unpack_from("<H", b3e, at + 12)[0], struct.unpack_from("<I", b3e, at + 16)[0]
             if kind in (3, 4) and addr in (0x5802, 0x5902) and expected == 0:
                 struct.pack_into("<I", b3e, at + 20, 0x3e)
+            if kind == 2 and addr == 0x2488 and expected == 0x10b:
+                struct.pack_into("<I", b3e, at + 20, 0x000b)
+                for bad_zcd in (0x000a, 0x020b):
+                    bad = bytearray(b3e)
+                    struct.pack_into("<I", bad, at + 20, bad_zcd)
+                    with self.assertRaisesRegex(ValueError, "mismatching readback"):
+                        t.decode(bad)
         self.assertEqual(t.decode(b3e)["outcome"], "complete")
         self.assertTrue(t.decode(b3e)["verified_off"])
         b[64:104] = b"0" * 40

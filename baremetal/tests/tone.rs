@@ -122,6 +122,7 @@ impl Bus for Model {
         );
         if r == 0x22c0 && v & 0xc0 == 0x80 {
             assert_eq!(self.pm[&0x248a] & 0xf9f, 0xf9f, "unmute only at -40dB");
+            assert_eq!(self.pm[&0x2488], if self.standby_3e { 0x0b } else { 0x10b });
             assert_eq!(self.pm[&0x2416] & 0xf, 7);
             assert_eq!(self.pm[&0x22c2], 1, "documented CFG1, no guessed channels");
             for a in [0x58, 0x59] {
@@ -133,6 +134,11 @@ impl Bus for Model {
                 }
             }
         }
+        let v = if self.standby_3e && r == 0x2488 {
+            v & 0x7f
+        } else {
+            v
+        };
         self.writes.push((r, v));
         self.pm.insert(r, v);
         result

@@ -74,6 +74,10 @@ machine then:
 3. Uses the documented SGEN sequence229a=0006,2296=cba1,229a=0003,229a=000b;
    CFG022c0 maskff3f→0 and CFG122c2→0001. Selects SGEN, enables SRC/DAC while muted.
 4. Applies the lineout NCP/LDO/bias/DACR→LOL sequence with250µs/100µs waits.
+   On MT6358 silicon (`mt6358.h`), `ZCD_CON0` (`0x2488`) implements bits0..6
+   (`0x007f`), so the `zcd_enable` update (`mask=0x07ff`, `expected=0x010b`)
+   reads back `0x000b` (`RG_AUDZCDGAINSTEPTIME=5`, `RG_AUDZCDENABLE=1`) on
+   hardware or `0x010b` in raw 16-bit simulation; both are accepted.
    Both lineout gain fields stay at the source's named **−40dB** value1f
    (`ZCD_CON1=0f9f`), replacing its initial−10dB/runtime gain choice. SGEN's
    undocumented attenuation/channel interpretations are not used.
