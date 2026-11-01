@@ -26,3 +26,61 @@ jobs:
 
       - name: Test
         run: cargo test --release
+
+  phone_diagnostics:
+    name: Phone diagnostic host tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust diagnostic tests (synthetic fixtures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(mktemp -d)
+          for suite in board_report board_pages usb_board4; do
+            rustc --edition=2021 --test "baremetal/tests/$suite.rs" -o "$output/$suite"
+            "$output/$suite"
+          done
+          rustc --edition=2021 --cfg 'feature="audio-report"' \
+            --test baremetal/tests/audio_board5.rs -o "$output/board5"
+          "$output/board5"
+          rustc --edition=2021 --cfg 'feature="audio-report"' \
+            --cfg 'feature="board6-report"' \
+            --test baremetal/tests/audio_board5.rs -o "$output/board6"
+          "$output/board6"
+      - name: Python capture tests
+        run: python3 -m unittest discover -s scripts -p 'test_capture_board*.py' -v
+      - name: Install architectural test tools
+        run: |
+          rustup target add aarch64-unknown-none
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm
+      - name: Alpha Marine, wire and exception checks
+        run: TMPDIR=/tmp bash scripts/check_alpha.sh
+
+  baremetal_build:
+    name: Bare-metal build (${{ matrix.label }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: preview
+            features: ''
+          - label: board3
+            features: board-report
+          - label: board4
+            features: usb-report
+          - label: board5
+            features: audio-report
+          - label: board6
+            features: board6-report
+          - label: audio-alpha1
+            features: alpha-report
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bare-metal target
+        run: rustup target add aarch64-unknown-none
+      - name: Build
+        working-directory: baremetal
+        run: cargo build --release --locked --features '${{ matrix.features }}'
