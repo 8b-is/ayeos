@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, RwLock};
 use std::thread;
 
@@ -49,33 +50,46 @@ fn main() {
     );
     println!();
 
-    let listener = {
-        let addr: std::net::SocketAddr = format!("{}:{}", node.host, node.port)
-            .parse()
-            .expect("bad addr");
-        let socket = socket2::Socket::new(
-            socket2::Domain::IPV4,
-            socket2::Type::STREAM,
-            Some(socket2::Protocol::TCP),
-        )
-        .expect("socket creation failed");
-        socket.set_reuse_address(true).expect("set_reuse_address");
-        socket.set_nonblocking(true).ok();
-        socket
-            .bind(&addr.into())
-            .expect("Failed to bind MEMNET port");
-        socket.listen(128).expect("Failed to listen on MEMNET port");
-        socket.set_nonblocking(false).ok();
-        TcpListener::from(socket)
+    // AyeFire covenant — ayeosd serves MEMNET on a local UNIX socket, no IP.
+    // Path: $AYEOSD_SOCK, default /tmp/ayeosd.sock (same default hf-mac dials).
+    let sock_path = std::env::var("AYEOSD_SOCK").unwrap_or_else(|_| "/tmp/ayeosd.sock".to_string());
+    remove_stale_socket(&sock_path);
+    let unix_listener = match UnixListener::bind(&sock_path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("ayeosd: failed to bind unix socket {sock_path}: {e}");
+            std::process::exit(1);
+        }
     };
-    println!("MEMNET listening on :{}", node.port);
+    println!("MEMNET listening on unix:{sock_path} (AyeFire covenant — no IP listener)");
     println!("commands: matrix, capsule [name], list, load <path>, stats, seed, help, quit");
     println!();
+
+    // Legacy IP listener is opt-in: AYEOSD_TCP=<port>.
+    if let Ok(port_str) = std::env::var("AYEOSD_TCP") {
+        match port_str.parse::<u16>() {
+            Ok(port) => {
+                let listener = bind_tcp(port);
+                println!("MEMNET listening on :{port} (AYEOSD_TCP)");
+                println!();
+                let store_clone = Arc::clone(&store);
+                let node_clone = Arc::clone(&node);
+                thread::spawn(move || {
+                    for stream in listener.incoming().flatten() {
+                        let s = Arc::clone(&store_clone);
+                        let n = Arc::clone(&node_clone);
+                        thread::spawn(move || handle_memnet(stream, &s, &n));
+                    }
+                });
+            }
+            Err(_) => eprintln!("ayeosd: AYEOSD_TCP must be a port number, got {port_str:?}"),
+        }
+    }
 
     let store_clone = Arc::clone(&store);
     let node_clone = Arc::clone(&node);
     thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
+        for stream in unix_listener.incoming().flatten() {
             let s = Arc::clone(&store_clone);
             let n = Arc::clone(&node_clone);
             thread::spawn(move || handle_memnet(stream, &s, &n));
@@ -183,6 +197,41 @@ fn sparsity(m: &TernaryMatrix) -> f64 {
     zeros as f64 / (m.dim * m.dim) as f64 * 100.0
 }
 
+/// Drop a stale socket file left by a dead daemon; refuse to start if one is live.
+fn remove_stale_socket(path: &str) {
+    if std::fs::metadata(path).is_err() {
+        return;
+    }
+    match UnixStream::connect(path) {
+        Ok(_) => {
+            eprintln!("ayeosd: another daemon is already listening on {path}");
+            std::process::exit(1);
+        }
+        Err(_) => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// Optional IP listener (AYEOSD_TCP=<port>) — reuse-address, nonblocking accept.
+fn bind_tcp(port: u16) -> TcpListener {
+    let addr: std::net::SocketAddr = format!("0.0.0.0:{port}").parse().expect("bad addr");
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    )
+    .expect("socket creation failed");
+    socket.set_reuse_address(true).expect("set_reuse_address");
+    socket.set_nonblocking(true).ok();
+    socket
+        .bind(&addr.into())
+        .expect("Failed to bind MEMNET port");
+    socket.listen(128).expect("Failed to listen on MEMNET port");
+    socket.set_nonblocking(false).ok();
+    TcpListener::from(socket)
+}
+
 fn print_matrix_stats(m: &TernaryMatrix) {
     println!("dim: {}×{}", m.dim, m.dim);
     println!("group_size: {}", m.group_size);
@@ -254,7 +303,11 @@ fn print_help() {
     println!("  quit            — shutdown");
 }
 
-fn handle_memnet(mut stream: TcpStream, store: &Arc<RwLock<Vec<NamedMatrix>>>, node: &MemnetNode) {
+fn handle_memnet<S: Read + Write>(
+    mut stream: S,
+    store: &Arc<RwLock<Vec<NamedMatrix>>>,
+    node: &MemnetNode,
+) {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let mut buf = [0u8; 1024];
     if let Ok(n) = stream.read(&mut buf) {

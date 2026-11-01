@@ -30,8 +30,11 @@ cargo run --bin ayeos-matrix 256 64
 # Same matrix every time. Deterministic. Reproducible.
 
 cargo run --bin ayeosd
-# MEMNET listening on :9876
+# MEMNET listening on unix:/tmp/ayeosd.sock (AyeFire covenant — no IP listener)
 # commands: matrix, capsule, stats, seed, quit
+
+# socket path: AYEOSD_SOCK (default /tmp/ayeosd.sock)
+# legacy IP listener: AYEOSD_TCP=9876 cargo run --bin ayeosd
 ```
 
 ## MEMNET
@@ -70,7 +73,7 @@ python3 scripts/train_quantal.py --model Qwen/Qwen2.5-0.5B --data your_data.json
 ayeOS is the ternary inference spine of the **HF-MAC{-1,0,+1}** stack:
 
 ```
-HF-MAC (macOS app) ←→ ayeOSd (MEMNET :9876) ←→ train_quantal.py
+HF-MAC (macOS app) ←→ ayeOSd (MEMNET unix socket) ←→ train_quantal.py
      ↕                      ↕
   entheai agent          MLX-QUANT Metal GPU
   MEM8 wave memory       kernel8 CPU hearth
