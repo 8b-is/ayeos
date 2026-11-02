@@ -41,20 +41,21 @@ SPK_CODE_BY_NAME = {
 }
 
 KEY_MAP = {
-    "z": (16, "E-4", 375),
-    "s": (15, "F-4", 400),
-    "x": (14, "F#4", 428),
-    "d": (13, "G-4", 461),
-    "c": (12, "B-4", 500),
-    "v": (11, "C-5", 545),
-    "g": (10, "D-5", 600),
-    "b": (9, "E-5", 666),
-    "n": (8, "F#5", 750),
-    "j": (7, "A-5", 857),
-    "m": (6, "B-5", 1000),
-    ",": (5, "D-6", 1200),
-    "l": (4, "F#6", 1500),
-    ".": (3, "B-6", 2000),
+    "z": (0x0090, "C-4", 262),
+    "s": (0x0091, "C#4", 277),
+    "x": (0x0092, "D-4", 294),
+    "d": (0x0093, "D#4", 311),
+    "c": (0x0094, "E-4", 330),
+    "v": (0x0095, "F-4", 349),
+    "g": (0x0096, "F#4", 370),
+    "b": (0x0097, "G-4", 392),
+    "h": (0x0098, "G#4", 415),
+    "n": (0x0099, "A-4", 440),
+    "j": (0x009a, "A#4", 466),
+    "m": (0x009b, "B-4", 494),
+    ",": (0x009c, "C-5", 523),
+    "l": (0x009e, "D-5", 587),
+    ".": (0x00a0, "E-5", 659),
 }
 
 
@@ -166,7 +167,7 @@ def trigger_and_wait(usb, cmd_value, cmd_index=0, timeout_ms=4000):
     usb.read(0xc0, 0xb8, cmd_value, cmd_index, 64)
     # Wait for the single bare-metal CPU to finish tone::play_steps + framebuffer flush
     # before sending EP0 status polls so the USB 2.0 Hub TT never aborts a split transfer.
-    initial_wait_ms = 2350 if cmd_value == 0x0080 else 420
+    initial_wait_ms = 2350 if cmd_value == 0x0080 else 560
     sleep_ms(initial_wait_ms)
     start_ns = time.monotonic_ns()
     deadline_ns = start_ns + int(timeout_ms) * 1_000_000
@@ -347,10 +348,13 @@ def run_interactive(usb, esp32_tty):
 
 
 NOTE_NAME_TO_DIV = {
-    "C4": 24, "C#4": 22, "D4": 21, "D#4": 20, "E4": 19, "F4": 18,
-    "F#4": 17, "G4": 16, "G#4": 15, "A4": 14, "A#4": 13, "B4": 12,
-    "C5": 12, "C#5": 11, "D5": 10, "D#5": 9, "E5": 8, "F5": 8,
-    "F#5": 7, "G5": 6, "G#5": 6, "A5": 5, "A#5": 4, "B5": 4, "C6": 3,
+    "C4": 0x0090, "C#4": 0x0091, "D4": 0x0092, "D#4": 0x0093,
+    "E4": 0x0094, "F4": 0x0095, "F#4": 0x0096, "G4": 0x0097,
+    "G#4": 0x0098, "A4": 0x0099, "A#4": 0x009A, "B4": 0x009B,
+    "C5": 0x009C, "C#5": 0x009D, "D5": 0x009E, "D#5": 0x009F,
+    "E5": 0x00A0, "F5": 0x00A1, "F#5": 0x00A2, "G5": 0x00A3,
+    "G#5": 0x00A4, "A5": 0x00A5, "A#5": 0x00A6, "B5": 0x00A7,
+    "C6": 0x00A7,
 }
 
 
@@ -359,8 +363,8 @@ def parse_note_arg(val):
     if s in NOTE_NAME_TO_DIV:
         return NOTE_NAME_TO_DIV[s]
     n = int(s, 0)
-    if not (1 <= n <= 31):
-        raise argparse.ArgumentTypeError("note must be a note name (C4..C6) or divider 1..31")
+    if not (1 <= n <= 31 or 0x0090 <= n <= 0x00A7):
+        raise argparse.ArgumentTypeError("note must be a note name (C4..B5), semitone cmd (0x90..0xa7), or divider 1..31")
     return n
 
 

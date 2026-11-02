@@ -174,9 +174,9 @@ impl<'a> Control<'a> {
             #[cfg(feature = "tone-report")]
             dbg_buf: [0; 32],
             #[cfg(feature = "tone-report")]
-            touch_enabled: false,
+            touch_enabled: true,
             #[cfg(feature = "tone-report")]
-            touch_irq_gpio: 0,
+            touch_irq_gpio: 1,
             #[cfg(feature = "tone-report")]
             touch_last_x: 0,
             #[cfg(feature = "tone-report")]

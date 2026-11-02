@@ -85,7 +85,7 @@ def complete_sequence():
             add(4, 1, addr | reg, 255, 0x2b if addr == 0x5900 and reg == 4 else value)
     add(5, 1, expected=30000)
     add(2, 2, 0x22c0, 0x40, 0)
-    for div in (12, 8, 6, 4):
+    for div in (2, 3, 4, 6):
         add(2, 2, 0x22c2, 0xffff, div)
     add(2, 3, 0x22c0, 0xc0, 0x40)
     add(2, 3, 0x2416, 0xc, 0)

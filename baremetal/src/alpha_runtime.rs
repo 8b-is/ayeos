@@ -188,9 +188,11 @@ extern "C" fn ayeos_fatal_halt() -> ! {
     alpha_halt()
 }
 fn alpha_halt() -> ! {
-    loop {
+    for _ in 0..30_000_000u32 {
         unsafe {
-            asm!("wfe", options(nomem, nostack, preserves_flags));
+            asm!("nop", options(nomem, nostack, preserves_flags));
         }
     }
+    let (base, stride) = unsafe { read_volatile(core::ptr::addr_of!(ALPHA_FRAMEBUFFER)) };
+    trigger_baremetal_ota_reboot(base, stride)
 }

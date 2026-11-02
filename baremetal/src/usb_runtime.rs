@@ -538,6 +538,11 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                     );
                     flush_dcache_range(base, stride * SCREEN_H * 4);
                 }
+                #[cfg(feature = "tone-report")]
+                if studio_visible {
+                    let _ = gc7272_hostdownload_reset_b1();
+                    io.start_faults = fault_count();
+                }
                 if init == usb_phy::Init::Ready {
                     init = usb_phy::connect(&mut io);
                 }
@@ -547,6 +552,14 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                 let kp_idle = safe_mmio_read16(KP_MEM1_ADDR);
                 #[cfg(feature = "tone-report")]
                 let mut kp_held = 0u32;
+                #[cfg(feature = "tone-report")]
+                let mut touch_was_down = false;
+                #[cfg(feature = "tone-report")]
+                let mut touch_drag_y = 0u16;
+                #[cfg(feature = "tone-report")]
+                let mut touch_last_key = 0xffu8;
+                #[cfg(feature = "tone-report")]
+                let mut touch_idle_polls = 0u32;
                 #[cfg(feature = "tone-report")]
                 let mut scriller_phase = 0usize;
                 #[cfg(feature = "tone-report")]
@@ -617,6 +630,101 @@ fn screen_usb(address: u64, base: usize, stride: usize) -> ! {
                                 tone_gate,
                             );
                             io.start_faults = fault_count();
+                        }
+                        if device.control.touch_enabled
+                            && studio_visible
+                            && (idle_ticks & 0x03 == 0)
+                        {
+                            let force_read = false;
+                            match gc7272_poll_touch(force_read) {
+                                Some((x, y, true)) => {
+                                    touch_idle_polls = 0;
+                                    if !touch_was_down {
+                                        touch_was_down = true;
+                                        touch_drag_y = y;
+                                        touch_last_key =
+                                            phone_studio::key_at_point(x, y).unwrap_or(0xff);
+                                        let _ = tone_dispatch_touch_point(
+                                            &mut device.control,
+                                            x,
+                                            y,
+                                            base,
+                                            stride,
+                                            &mut active_row,
+                                            &mut qwave_scroll,
+                                            &mut qwave_tab,
+                                            &mut qwave_full_mode,
+                                            studio_visible,
+                                            tone_gate,
+                                        );
+                                        io.start_faults = fault_count();
+                                    } else {
+                                        device.control.touch_last_x = x;
+                                        device.control.touch_last_y = y;
+                                        if let Some(semi) = phone_studio::key_at_point(x, y) {
+                                            if semi != touch_last_key {
+                                                touch_last_key = semi;
+                                                let _ = tone_dispatch_touch_point(
+                                                    &mut device.control,
+                                                    x,
+                                                    y,
+                                                    base,
+                                                    stride,
+                                                    &mut active_row,
+                                                    &mut qwave_scroll,
+                                                    &mut qwave_tab,
+                                                    &mut qwave_full_mode,
+                                                    studio_visible,
+                                                    tone_gate,
+                                                );
+                                                io.start_faults = fault_count();
+                                            }
+                                        } else if y < 1020 {
+                                            let dy = (y as i32) - (touch_drag_y as i32);
+                                            if dy <= -36 || dy >= 36 {
+                                                touch_drag_y = y;
+                                                if dy <= -36 {
+                                                    qwave_scroll = (qwave_scroll + 1)
+                                                        .min(phone_studio::QWAVE_MAX_SCROLL);
+                                                } else {
+                                                    qwave_scroll = qwave_scroll.saturating_sub(1);
+                                                }
+                                                let mut canvas = PhoneCanvas { base, stride };
+                                                if qwave_full_mode {
+                                                    phone_studio::paint_qwave_top_viewport(
+                                                        &mut canvas,
+                                                        glyph_8x16_hd,
+                                                        qwave_scroll,
+                                                        qwave_tab,
+                                                    );
+                                                }
+                                                phone_studio::paint_qwave_browser(
+                                                    &mut canvas,
+                                                    glyph_8x16_hd,
+                                                    qwave_scroll,
+                                                    qwave_tab,
+                                                );
+                                                flush_dcache_range(base, stride * SCREEN_H * 4);
+                                            }
+                                        }
+                                    }
+                                }
+                                Some((_, _, false)) => {
+                                    touch_was_down = false;
+                                    touch_last_key = 0xff;
+                                    touch_idle_polls = 0;
+                                }
+                                None => {
+                                    if touch_was_down {
+                                        touch_idle_polls = touch_idle_polls.saturating_add(1);
+                                        if touch_idle_polls >= 4 {
+                                            touch_was_down = false;
+                                            touch_last_key = 0xff;
+                                            touch_idle_polls = 0;
+                                        }
+                                    }
+                                }
+                            }
                         }
                         let mut trigger = device.control.pending_tracker.take();
                         if trigger.is_none() && studio_visible && kp_idle != 0 && idle_ticks & 0xff == 0 {

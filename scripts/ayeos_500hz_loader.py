@@ -89,6 +89,22 @@ def main():
         f"[500Hz Loader] Watching all USB ports at 500 Hz (2ms) for BLU G75 ({SERIAL})...",
         flush=True,
     )
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import ayeos_debug_socket as dbg
+        import screamtracker_jam as jam
+
+        dev_path = jam.find_tone_usb_device()
+        if dev_path:
+            print(
+                f"[500Hz Loader] Found live AyeOS handset at {dev_path} — sending AOTA reboot-to-fastboot...",
+                flush=True,
+            )
+            res = dbg.execute_request({"cmd": "ota_reboot"}, device_path=dev_path)
+            print(f"[500Hz Loader] AOTA response: {res}", flush=True)
+    except Exception as exc:
+        print(f"[500Hz Loader] Note: AOTA trigger skipped ({exc})", flush=True)
+
     start_ns = time.monotonic_ns()
     deadline_ns = start_ns + int(args.timeout_sec) * 1_000_000_000
     polls = 0

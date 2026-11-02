@@ -43,20 +43,25 @@ QWAVE_STATE = {
 # (N = 0 or N = 16 has low 4 bits = 0 -> 0 Hz DC click with no tone!)
 # Map all 14 white keys (indices 0,2,4,5,7,9,11,12,14,16,17,19,21,23) to distinct
 # ascending multipliers N = 1..14 (125 Hz, 250 Hz, 375 Hz, ..., 1750 Hz)!
+SEMITONE_HZ = (
+    262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494,
+    523, 554, 587, 622, 659, 698, 740, 784, 831, 880, 932, 988,
+)
+
 SEMITONE_TO_SGEN_MULT = (
     1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7,
     8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14,
 )
 
 TRACKER_ROW_SGEN = (
-    (2, "both", -4),
-    (3, "both", -4),
-    (4, "both", -4),
-    (5, "both", -4),
-    (6, "left", -4),
-    (5, "right", -4),
-    (4, "both", -4),
-    (2, "both", -4),
+    (262, "both", 4),
+    (330, "both", 4),
+    (392, "both", 4),
+    (440, "both", 4),
+    (523, "left", 4),
+    (440, "right", 4),
+    (392, "both", 4),
+    (262, "both", 4),
 )
 
 
@@ -335,48 +340,47 @@ def execute_request(req, device_path=None):
             semi = host_key_at_point(x, y)
             row = host_row_at_point(x, y)
             if semi is not None:
-                # Use true ascending SGEN multiplier N = 1..15 (125 Hz * N) and -4 dB smooth ZCD gain
-                mult_n = SEMITONE_TO_SGEN_MULT[semi]
-                idx = jam.encode_note_index(gain_db=-4, spk="both", duration_ms=140)
-                atrk = jam.trigger_and_wait(usb, mult_n, idx, timeout_ms=3500)
+                hz = SEMITONE_HZ[semi]
+                idx = jam.encode_note_index(gain_db=4, spk="both", duration_ms=160)
+                atrk = jam.trigger_and_wait(usb, 0x0090 + semi, idx, timeout_ms=3500)
                 adbg = decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
                 hit_kind = "piano_key"
                 hit_index = semi
                 QWAVE_STATE["last_touch_x"] = x
                 QWAVE_STATE["last_touch_y"] = y
-                QWAVE_STATE["last_hit"] = f"piano_key:{semi}({mult_n * 125}Hz)"
+                QWAVE_STATE["last_hit"] = f"piano_key:{semi}({hz}Hz)"
                 return {
                     "ok": atrk["last_outcome"] == 1,
                     "x": x,
                     "y": y,
                     "hit_kind": hit_kind,
                     "hit_index": hit_index,
-                    "sgen_mult": mult_n,
-                    "freq_hz": mult_n * 125,
-                    "gain_db": -4,
+                    "sgen_mult": SEMITONE_TO_SGEN_MULT[semi],
+                    "freq_hz": hz,
+                    "gain_db": 4,
                     "qwave": dict(QWAVE_STATE),
                     "tracker": atrk,
                     "adbg": adbg,
                 }
             if row is not None:
-                mult_n, spk, gain_db = TRACKER_ROW_SGEN[row % 8]
-                idx = jam.encode_note_index(gain_db=gain_db, spk=spk, duration_ms=140)
-                atrk = jam.trigger_and_wait(usb, mult_n, idx, timeout_ms=3500)
+                hz, spk, gain_db = TRACKER_ROW_SGEN[row % 8]
+                idx = jam.encode_note_index(gain_db=gain_db, spk=spk, duration_ms=160)
+                atrk = jam.trigger_and_wait(usb, 0x0081 + (row % 8), idx, timeout_ms=3500)
                 atrk["active_row"] = row
                 adbg = decode_adbg(usb.read(0xc0, 0xba, 0, 0, 64))
                 hit_kind = "tracker_row"
                 hit_index = row
                 QWAVE_STATE["last_touch_x"] = x
                 QWAVE_STATE["last_touch_y"] = y
-                QWAVE_STATE["last_hit"] = f"tracker_row:{row}({mult_n * 125}Hz)"
+                QWAVE_STATE["last_hit"] = f"tracker_row:{row}({hz}Hz)"
                 return {
                     "ok": atrk["last_outcome"] == 1,
                     "x": x,
                     "y": y,
                     "hit_kind": hit_kind,
                     "hit_index": hit_index,
-                    "sgen_mult": mult_n,
-                    "freq_hz": mult_n * 125,
+                    "sgen_mult": 16,
+                    "freq_hz": hz,
                     "gain_db": gain_db,
                     "qwave": dict(QWAVE_STATE),
                     "tracker": atrk,
@@ -463,6 +467,43 @@ def execute_request(req, device_path=None):
                 "gpio_din_10005200": gpio_res["buf_u32_hex"][:6],
             }
 
+        if cmd == "gc7272":
+            action = int(str(req.get("action", 5)), 0) & 0xFFFF
+            res = exec_debug_op(usb, (5 << 8) | 9, action, timeout_ms=4000, initial_wait_ms=120)
+            return {
+                "ok": res["status"] == 1,
+                "action": action,
+                "result_hex": f"0x{res['result']:08x}",
+                "buf_hex": res["buf_hex"],
+                "buf_u32_hex": res["buf_u32_hex"],
+                "adbg": res,
+            }
+
+        if cmd == "audio_scope":
+            reg = int(str(req.get("reg", "0x22a4")), 0) & 0xFFFF
+            ms = max(5, min(250, int(str(req.get("ms", 40)), 0)))
+            usb.read(0xc0, 0xb9, 0x0000, ms, 64)
+            res = exec_debug_op(usb, (6 << 8) | 9, reg, timeout_ms=4000, initial_wait_ms=ms + 40)
+            raw_bytes = bytes.fromhex(res["buf_hex"])
+            s8 = lambda b: b - 256 if b >= 128 else b
+            n_samp = raw_bytes[4] | (raw_bytes[5] << 8)
+            return {
+                "ok": res["status"] == 1,
+                "reg": f"0x{reg:04x}",
+                "window_ms": ms,
+                "hz_left": res["result"] & 0xFFFF,
+                "hz_right": (res["result"] >> 16) & 0xFFFF,
+                "min_left": s8(raw_bytes[0]),
+                "max_left": s8(raw_bytes[1]),
+                "min_right": s8(raw_bytes[2]),
+                "max_right": s8(raw_bytes[3]),
+                "n_samples": n_samp,
+                "zero_crossings_left": raw_bytes[6],
+                "zero_crossings_right": raw_bytes[7],
+                "waveform_left": [s8(b) for b in raw_bytes[8:32]],
+                "adbg": res,
+            }
+
         if cmd == "ota_reboot":
             pkt = usb.read(0xc0, 0xa8, 0xa8e0, 0, 64)
             return {
@@ -542,6 +583,8 @@ def parse_line_to_request(line):
         }
     if cmd in ("touch_probe", "fdt_touch_info"):
         return {"cmd": "touch_probe"}
+    if cmd == "gc7272":
+        return {"cmd": "gc7272", "action": parts[1] if len(parts) > 1 else "5"}
     if cmd == "ota_reboot":
         return {"cmd": "ota_reboot"}
     return {"cmd": cmd}

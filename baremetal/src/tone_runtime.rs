@@ -109,16 +109,18 @@ fn tone_run(
     r
 }
 
-// MT6358_AFE_SGEN_CFG1 (0x22c2) bits 3:0 are a frequency multiplier N = 1..15
-// (f = (8000 Hz / 64) * N = 125 Hz * N; N=0 / N=16 is 0 Hz DC silence!).
-// Map the 14 white keys (indices 0,2,4,5,7,9,11,12,14,16,17,19,21,23) to strictly
-// distinct ascending multipliers N = 1..14 (125 Hz .. 1750 Hz).
+// Concert-pitch frequencies (Hz) for the 24 keys (C4..B5, indices 0..23).
+const SEMITONE_HZ: [u16; 24] = [
+    262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494,
+    523, 554, 587, 622, 659, 698, 740, 784, 831, 880, 932, 988,
+];
+
 const SEMITONE_DIVS: [u16; 24] = [
     1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14,
 ];
 
 fn div_to_key_index(div: u16) -> u8 {
-    match div & 0x0f {
+    match div & 0x1f {
         0 | 1 => 0,
         2 => 2,
         3 => 4,
@@ -133,7 +135,7 @@ fn div_to_key_index(div: u16) -> u8 {
         12 => 19,
         13 => 21,
         14 => 23,
-        _ => 23,
+        n => ((n - 1) as u8).min(23),
     }
 }
 
@@ -178,19 +180,20 @@ fn tone_play_live(
             2 => (0x0000, 8),
             3 => (0x060c, -4),
             4 => (0x0912, -10),
-            _ => (0x0408, 0),
+            _ => (0x0000, 8),
         };
         let dur_10ms = (cmd_index >> 8) as u32;
         let duration_us = if dur_10ms == 0 {
-            140_000
+            220_000
         } else {
             (dur_10ms * 10_000).clamp(20_000, 1_500_000)
         };
-        let step_mult = (div & 0x0f).clamp(1, 15);
+        let step_mult = (div & 0x1f).clamp(1, 31);
+        let hz = SEMITONE_HZ[(key_index as usize).min(23)];
         custom_step = [tone::TrackerStep {
             note: "JAM",
             key_index,
-            hz: 125 * step_mult,
+            hz,
             div: step_mult,
             gain_reg,
             gain_db,
@@ -202,17 +205,24 @@ fn tone_play_live(
         return (2, 0);
     };
 
-    let r = tone::play_steps(&mut bus, steps, |idx, step| {
+    if studio_visible && steps.len() == 1 {
+        let mut canvas = PhoneCanvas { base, stride };
+        phone_studio::paint_tracker_rows(&mut canvas, glyph_8x16_hd, *active_row);
+        phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, steps[0].key_index);
+        flush_dcache_range(base, stride * SCREEN_H * 4);
+    }
+    let r = tone::play_steps(&mut bus, steps, |idx, _step| {
         pet_mediatek_watchdog();
         let row = (base_row + idx) % tone::PATTERN.len();
         *active_row = row;
-        if studio_visible {
-            let mut canvas = PhoneCanvas { base, stride };
-            phone_studio::paint_tracker_rows(&mut canvas, glyph_8x16_hd, row);
-            phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, step.key_index);
-            flush_dcache_range(base, stride * SCREEN_H * 4);
-        }
     });
+    if studio_visible && steps.len() > 1 {
+        let last_key = steps[steps.len() - 1].key_index;
+        let mut canvas = PhoneCanvas { base, stride };
+        phone_studio::paint_tracker_rows(&mut canvas, glyph_8x16_hd, *active_row);
+        phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, last_key);
+        flush_dcache_range(base, stride * SCREEN_H * 4);
+    }
     (r.outcome, r.off)
 }
 
@@ -435,10 +445,10 @@ fn tone_debug_exec(
                 // SPI_CMD_ACT (bit 0) | TXMSBF (bit 12) | RXMSBF (bit 13) | DEASSERT (bit 16)
                 safe_mmio_write32(SPI0_BASE + 0x18, 0x0001_3001);
                 let mut done = false;
-                for _ in 0..4096 {
+                for _ in 0..16_384 {
                     let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
                     let st1 = safe_mmio_read32(SPI0_BASE + 0x20);
-                    if st0 & 1 != 0 || st1 & 1 == 0 {
+                    if (st0 & 1) != 0 && (st1 & 1) != 0 {
                         done = true;
                         break;
                     }
@@ -466,117 +476,20 @@ fn tone_debug_exec(
             0 => {
                 let x = idx;
                 let y = control.dbg_arg_lo;
-                control.touch_last_x = x;
-                control.touch_last_y = y;
-                control.touch_events = control.touch_events.wrapping_add(1);
-                if let Some(semi) = phone_studio::key_at_point(x, y) {
-                    let cmd = 0x0090 + semi as u16;
-                    let (outcome, off) = tone_play_live(
-                        tone_gate,
-                        studio_visible,
-                        cmd,
-                        0,
-                        base,
-                        stride,
-                        active_row,
-                    );
-                    control.tracker_plays = control.tracker_plays.saturating_add(1);
-                    control.tracker_last_cmd = cmd;
-                    control.tracker_last_outcome = outcome;
-                    control.tracker_last_off = off;
-                    control.tracker_active_row = *active_row as u8;
-                    control.dbg_status = 1;
-                    control.dbg_result = (0x0100 | (semi as u32)) | (outcome << 16);
-                } else if let Some(row) = phone_studio::row_at_point(x, y) {
-                    let cmd = 0x0081 + row as u16;
-                    let (outcome, off) = tone_play_live(
-                        tone_gate,
-                        studio_visible,
-                        cmd,
-                        0,
-                        base,
-                        stride,
-                        active_row,
-                    );
-                    control.tracker_plays = control.tracker_plays.saturating_add(1);
-                    control.tracker_last_cmd = cmd;
-                    control.tracker_last_outcome = outcome;
-                    control.tracker_last_off = off;
-                    control.tracker_active_row = *active_row as u8;
-                    control.dbg_status = 1;
-                    control.dbg_result = (0x0200 | (row as u32)) | (outcome << 16);
-                } else if phone_studio::mode_toggle_at_point(x, y) {
-                    *qwave_full_mode = !*qwave_full_mode;
-                    if studio_visible {
-                        let mut canvas = PhoneCanvas { base, stride };
-                        if *qwave_full_mode {
-                            phone_studio::paint_qwave_top_viewport(
-                                &mut canvas,
-                                glyph_8x16_hd,
-                                *qwave_scroll,
-                                *qwave_tab,
-                            );
-                        } else {
-                            phone_studio::paint_studio_top_viewport(&mut canvas, glyph_8x16_hd);
-                        }
-                        flush_dcache_range(base, stride * SCREEN_H * 4);
-                    }
-                    control.dbg_status = 1;
-                    control.dbg_result = 0x0500 | (*qwave_full_mode as u32);
-                } else if let Some(tab) = phone_studio::tab_at_point(x, y) {
-                    *qwave_tab = tab;
-                    *qwave_scroll = 0;
-                    if studio_visible {
-                        let mut canvas = PhoneCanvas { base, stride };
-                        if *qwave_full_mode {
-                            phone_studio::paint_qwave_top_viewport(
-                                &mut canvas,
-                                glyph_8x16_hd,
-                                *qwave_scroll,
-                                *qwave_tab,
-                            );
-                        }
-                        phone_studio::paint_qwave_browser(
-                            &mut canvas,
-                            glyph_8x16_hd,
-                            *qwave_scroll,
-                            *qwave_tab,
-                        );
-                        flush_dcache_range(base, stride * SCREEN_H * 4);
-                    }
-                    control.dbg_status = 1;
-                    control.dbg_result = 0x0300 | (tab as u32);
-                } else if let Some(delta) = phone_studio::scroll_at_point(x, y) {
-                    if delta < 0 {
-                        *qwave_scroll = qwave_scroll.saturating_sub((-delta) as usize);
-                    } else {
-                        *qwave_scroll =
-                            (*qwave_scroll + (delta as usize)).min(phone_studio::QWAVE_MAX_SCROLL);
-                    }
-                    if studio_visible {
-                        let mut canvas = PhoneCanvas { base, stride };
-                        if *qwave_full_mode {
-                            phone_studio::paint_qwave_top_viewport(
-                                &mut canvas,
-                                glyph_8x16_hd,
-                                *qwave_scroll,
-                                *qwave_tab,
-                            );
-                        }
-                        phone_studio::paint_qwave_browser(
-                            &mut canvas,
-                            glyph_8x16_hd,
-                            *qwave_scroll,
-                            *qwave_tab,
-                        );
-                        flush_dcache_range(base, stride * SCREEN_H * 4);
-                    }
-                    control.dbg_status = 1;
-                    control.dbg_result = 0x0400 | (*qwave_scroll as u32);
-                } else {
-                    control.dbg_status = 1;
-                    control.dbg_result = 0;
-                }
+                control.dbg_result = tone_dispatch_touch_point(
+                    control,
+                    x,
+                    y,
+                    base,
+                    stride,
+                    active_row,
+                    qwave_scroll,
+                    qwave_tab,
+                    qwave_full_mode,
+                    studio_visible,
+                    tone_gate,
+                );
+                control.dbg_status = 1;
             }
             1 => {
                 let div = (idx & 0x1f).clamp(1, 31);
@@ -669,6 +582,183 @@ fn tone_debug_exec(
                 control.dbg_status = 1;
                 control.dbg_result = ((*qwave_tab as u32) << 8) | (*qwave_scroll as u32);
             }
+            5 => {
+                match idx {
+                    0 => {
+                        control.dbg_result = gc7272_hostdownload_reset_b1();
+                        unsafe {
+                            control.dbg_buf = read_volatile(core::ptr::addr_of!(GC7272_LAST_PKT));
+                        }
+                        control.dbg_status = 1;
+                    }
+                    1 => {
+                        let s0 = gc7272_hostdownload_reset_b1();
+                        gc7272_upgrade_soft_reset();
+                        control.dbg_result = s0 | 0x0100_0000;
+                        unsafe {
+                            control.dbg_buf = read_volatile(core::ptr::addr_of!(GC7272_LAST_PKT));
+                        }
+                        control.dbg_status = 1;
+                    }
+                    2 => {
+                        control.dbg_result = gc7272_hostdownload_idm2();
+                        unsafe {
+                            control.dbg_buf = read_volatile(core::ptr::addr_of!(GC7272_LAST_PKT));
+                        }
+                        control.dbg_status = 1;
+                    }
+                    3 => {
+                        control.dbg_result = gc7272_idm_read_id(&mut control.dbg_buf);
+                        control.dbg_status = 1;
+                    }
+                    4 => {
+                        let mut pkt = [0u8; 65];
+                        gc7272_spi_read(&mut pkt);
+                        control.dbg_buf.copy_from_slice(&pkt[0..32]);
+                        control.dbg_result = (pkt[0] as u32)
+                            | ((pkt[1] as u32) << 8)
+                            | ((pkt[2] as u32) << 16)
+                            | ((pkt[64] as u32) << 24);
+                        control.dbg_status = 1;
+                    }
+                    _ => {
+                        unsafe {
+                            control.dbg_result =
+                                read_volatile(core::ptr::addr_of!(GC7272_BOOT_STATUS));
+                            control.dbg_buf = read_volatile(core::ptr::addr_of!(GC7272_LAST_PKT));
+                        }
+                        control.dbg_status = 1;
+                    }
+                }
+            }
+            6 => {
+                // High-speed on-chip digital audio frequency counter & triggered oscilloscope
+                // Reads MT6358_AFUNC_AUD_MON0 (0x22a4 by default, or PMIC reg `idx`) in a tight
+                // 13 MHz hardware-timed window (default 40ms, or `dbg_arg_lo` ms).
+                let mon_reg = if idx == 0 { 0x22a4 } else { idx };
+                let win_ms = if control.dbg_arg_lo == 0 {
+                    40u64
+                } else {
+                    (control.dbg_arg_lo as u64).clamp(5, 250)
+                };
+                let win_ticks = win_ms * 13_000;
+                match tone_bus::Hardware::prepare(UsbIo {
+                    start_faults: fault_count(),
+                }) {
+                    Ok(mut bus) => {
+                        let t0 = bus.ticks().unwrap_or(0);
+                        let mut min_l: i8 = 127;
+                        let mut max_l: i8 = -128;
+                        let mut min_r: i8 = 127;
+                        let mut max_r: i8 = -128;
+                        let mut n_samples: u32 = 0;
+                        let mut armed_l = false;
+                        let mut armed_r = false;
+                        let mut zc_l: u32 = 0;
+                        let mut zc_r: u32 = 0;
+                        let mut t_first_l: u64 = 0;
+                        let mut t_last_l: u64 = 0;
+                        let mut t_first_r: u64 = 0;
+                        let mut t_last_r: u64 = 0;
+                        let mut wf_idx: usize = 0;
+                        let mut wf_decim: u32 = 0;
+                        loop {
+                            if (n_samples & 0x3ff) == 0 {
+                                pet_mediatek_watchdog();
+                            }
+                            let now = bus.ticks().unwrap_or(t0);
+                            if now.wrapping_sub(t0) >= win_ticks {
+                                break;
+                            }
+                            if let Ok(v) = bus.pmic_read(mon_reg) {
+                                let l = (v >> 8) as i8;
+                                let r = (v & 0xff) as i8;
+                                if l < min_l {
+                                    min_l = l;
+                                }
+                                if l > max_l {
+                                    max_l = l;
+                                }
+                                if r < min_r {
+                                    min_r = r;
+                                }
+                                if r > max_r {
+                                    max_r = r;
+                                }
+                                if l <= -2 {
+                                    armed_l = true;
+                                } else if armed_l && l >= 2 {
+                                    armed_l = false;
+                                    if zc_l == 0 {
+                                        t_first_l = now;
+                                    }
+                                    t_last_l = now;
+                                    zc_l += 1;
+                                }
+                                if r <= -2 {
+                                    armed_r = true;
+                                } else if armed_r && r >= 2 {
+                                    armed_r = false;
+                                    if zc_r == 0 {
+                                        t_first_r = now;
+                                    }
+                                    t_last_r = now;
+                                    zc_r += 1;
+                                }
+                                if zc_l >= 1 && wf_idx < 24 {
+                                    if wf_decim == 0 {
+                                        control.dbg_buf[8 + wf_idx] = l as u8;
+                                        wf_idx += 1;
+                                        wf_decim = 3;
+                                    } else {
+                                        wf_decim -= 1;
+                                    }
+                                }
+                                n_samples += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if wf_idx == 0 {
+                            // If signal never crossed zero, still record 24 raw samples
+                            for s_i in 0..24usize {
+                                if let Ok(v) = bus.pmic_read(mon_reg) {
+                                    control.dbg_buf[8 + s_i] = (v >> 8) as u8;
+                                }
+                            }
+                        }
+                        let dt_l = t_last_l.saturating_sub(t_first_l);
+                        let hz_l = if zc_l >= 2 && dt_l > 0 {
+                            (((zc_l - 1) as u64) * 13_000_000 + (dt_l / 2)) / dt_l
+                        } else {
+                            0
+                        };
+                        let dt_r = t_last_r.saturating_sub(t_first_r);
+                        let hz_r = if zc_r >= 2 && dt_r > 0 {
+                            (((zc_r - 1) as u64) * 13_000_000 + (dt_r / 2)) / dt_r
+                        } else {
+                            0
+                        };
+                        control.dbg_buf[0] = min_l as u8;
+                        control.dbg_buf[1] = max_l as u8;
+                        control.dbg_buf[2] = min_r as u8;
+                        control.dbg_buf[3] = max_r as u8;
+                        let ns16 = (n_samples.min(65535) as u16).to_le_bytes();
+                        control.dbg_buf[4] = ns16[0];
+                        control.dbg_buf[5] = ns16[1];
+                        control.dbg_buf[6] = zc_l.min(255) as u8;
+                        control.dbg_buf[7] = zc_r.min(255) as u8;
+                        control.dbg_result =
+                            ((hz_r.min(65535) as u32) << 16) | (hz_l.min(65535) as u32);
+                        control.dbg_status = 1;
+                        let _ = bus.restore();
+                    }
+                    Err(e) => {
+                        control.dbg_status = 0x200 | (e as u32);
+                        control.dbg_result = 0;
+                    }
+                }
+            }
             _ => {
                 control.dbg_status = 0xff;
                 control.dbg_result = 0;
@@ -679,6 +769,619 @@ fn tone_debug_exec(
             control.dbg_result = 0;
         }
     }
+}
+
+fn tone_dispatch_touch_point(
+    control: &mut usb_control::Control<'_>,
+    x: u16,
+    y: u16,
+    base: usize,
+    stride: usize,
+    active_row: &mut usize,
+    qwave_scroll: &mut usize,
+    qwave_tab: &mut usize,
+    qwave_full_mode: &mut bool,
+    studio_visible: bool,
+    tone_gate: bool,
+) -> u32 {
+    control.touch_last_x = x;
+    control.touch_last_y = y;
+    control.touch_events = control.touch_events.wrapping_add(1);
+    if let Some(semi) = phone_studio::key_at_point(x, y) {
+        let cmd = 0x0090 + semi as u16;
+        let (outcome, off) = tone_play_live(
+            tone_gate,
+            studio_visible,
+            cmd,
+            0,
+            base,
+            stride,
+            active_row,
+        );
+        control.tracker_plays = control.tracker_plays.saturating_add(1);
+        control.tracker_last_cmd = cmd;
+        control.tracker_last_outcome = outcome;
+        control.tracker_last_off = off;
+        control.tracker_active_row = *active_row as u8;
+        (0x0100 | (semi as u32)) | (outcome << 16)
+    } else if let Some(row) = phone_studio::row_at_point(x, y) {
+        let cmd = 0x0081 + row as u16;
+        let (outcome, off) = tone_play_live(
+            tone_gate,
+            studio_visible,
+            cmd,
+            0,
+            base,
+            stride,
+            active_row,
+        );
+        control.tracker_plays = control.tracker_plays.saturating_add(1);
+        control.tracker_last_cmd = cmd;
+        control.tracker_last_outcome = outcome;
+        control.tracker_last_off = off;
+        control.tracker_active_row = *active_row as u8;
+        (0x0200 | (row as u32)) | (outcome << 16)
+    } else if phone_studio::mode_toggle_at_point(x, y) {
+        *qwave_full_mode = !*qwave_full_mode;
+        if studio_visible {
+            let mut canvas = PhoneCanvas { base, stride };
+            if *qwave_full_mode {
+                phone_studio::paint_qwave_top_viewport(
+                    &mut canvas,
+                    glyph_8x16_hd,
+                    *qwave_scroll,
+                    *qwave_tab,
+                );
+            } else {
+                phone_studio::paint_studio_top_viewport(&mut canvas, glyph_8x16_hd);
+            }
+            flush_dcache_range(base, stride * SCREEN_H * 4);
+        }
+        0x0500 | (*qwave_full_mode as u32)
+    } else if let Some(tab) = phone_studio::tab_at_point(x, y) {
+        *qwave_tab = tab;
+        *qwave_scroll = 0;
+        if studio_visible {
+            let mut canvas = PhoneCanvas { base, stride };
+            if *qwave_full_mode {
+                phone_studio::paint_qwave_top_viewport(
+                    &mut canvas,
+                    glyph_8x16_hd,
+                    *qwave_scroll,
+                    *qwave_tab,
+                );
+            }
+            phone_studio::paint_qwave_browser(
+                &mut canvas,
+                glyph_8x16_hd,
+                *qwave_scroll,
+                *qwave_tab,
+            );
+            flush_dcache_range(base, stride * SCREEN_H * 4);
+        }
+        0x0300 | (tab as u32)
+    } else if let Some(delta) = phone_studio::scroll_at_point(x, y) {
+        if delta < 0 {
+            *qwave_scroll = qwave_scroll.saturating_sub((-delta) as usize);
+        } else {
+            *qwave_scroll = (*qwave_scroll + (delta as usize)).min(phone_studio::QWAVE_MAX_SCROLL);
+        }
+        if studio_visible {
+            let mut canvas = PhoneCanvas { base, stride };
+            if *qwave_full_mode {
+                phone_studio::paint_qwave_top_viewport(
+                    &mut canvas,
+                    glyph_8x16_hd,
+                    *qwave_scroll,
+                    *qwave_tab,
+                );
+            }
+            phone_studio::paint_qwave_browser(
+                &mut canvas,
+                glyph_8x16_hd,
+                *qwave_scroll,
+                *qwave_tab,
+            );
+            flush_dcache_range(base, stride * SCREEN_H * 4);
+        }
+        0x0400 | (*qwave_scroll as u32)
+    } else {
+        0
+    }
+}
+
+// ============================================================================
+// GalaxyCore GC7272 TDDI SPI Touchscreen Driver (BLU G75 / Jingtai HKC 6.88")
+// ============================================================================
+// Bus: spi0@0x1100a000 (SPI_MODE_3: CPOL=1, CPHA=1, ~6 MHz)
+// Pins: GPIO23 = RST (output), GPIO1 = IRQ (input), GPIO156 = CS0 (manual GPIO)
+// Firmware: E34_HKC6_88_JT_GC7272_0x073C_0x1003_20250609.bin (65,536 bytes, CRC 0x7d422344)
+
+static GC7272_FW: &[u8; 65536] = include_bytes!("gc7272_fw.bin");
+
+const GC7272_IDM_KEY: [u8; 65] = [
+    0x4c, 0x70, 0xb8, 0x5c, 0x2e, 0x17, 0x0b, 0x05,
+    0x02, 0x81, 0xc0, 0x60, 0x30, 0x98, 0x4c, 0x26,
+    0x13, 0x09, 0x84, 0x42, 0xa1, 0xd0, 0xe8, 0x74,
+    0x3a, 0x9d, 0x4e, 0xa7, 0x53, 0x29, 0x14, 0x0a,
+    0x05, 0x02, 0x81, 0x40, 0xa0, 0xd0, 0xe8, 0xf4,
+    0xfa, 0x7d, 0x3e, 0x9f, 0x4f, 0xa7, 0x53, 0x29,
+    0x14, 0x0a, 0x05, 0x82, 0xc1, 0xe0, 0xf0, 0xf8,
+    0xfc, 0xfe, 0xff, 0x7f, 0x3f, 0x9f, 0xcf, 0xe7,
+    0x73,
+];
+
+static mut GC7272_BOOT_STATUS: u32 = 0;
+static mut GC7272_LAST_PKT: [u8; 32] = [0; 32];
+static mut GC7272_B1_COOLDOWN: u32 = 0;
+
+fn gc7272_delay_us(us: u64) {
+    let start: u64;
+    let freq: u64;
+    unsafe {
+        asm!("isb", "mrs {}, cntpct_el0", out(reg) start, options(nostack, preserves_flags));
+        asm!("mrs {}, cntfrq_el0", out(reg) freq, options(nomem, nostack, preserves_flags));
+    }
+    let ticks = (freq.max(1_000_000) / 1_000_000).max(1).saturating_mul(us);
+    loop {
+        let now: u64;
+        unsafe {
+            asm!("isb", "mrs {}, cntpct_el0", out(reg) now, options(nostack, preserves_flags));
+        }
+        if now.wrapping_sub(start) >= ticks {
+            break;
+        }
+        core::hint::spin_loop();
+    }
+}
+
+fn gc7272_spi_fifo_reset() {
+    const SPI0_BASE: usize = 0x1100_a000;
+    // Hold GPIO158 (SPI0_CLK, bit 30 of GPIO bank 4) HIGH as GPIO output (func 0)
+    // while pulsing SPI_CMD_RST (bit 2 of SPI0_BASE + 0x18). This prevents the
+    // MediaTek SPI controller's CPOL=0 reset glitch from reaching the physical
+    // SPI0_CLK pin while CS (GPIO156) is LOW during multi-chunk transfers.
+    safe_mmio_write32(0x1000_5144, 1 << 30); // GPIO158 DOUT = HIGH
+    safe_mmio_write32(0x1000_5044, 1 << 30); // GPIO158 DIR = OUT
+    let m19 = safe_mmio_read32(0x1000_5430);
+    safe_mmio_write32(0x1000_5430, m19 & !0x0f00_0000); // GPIO158 -> func 0 (GPIO HIGH)
+    safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3304); // Assert SPI_CMD_RST
+    safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3300); // Latch CPOL=1, CPHA=1, TXMSBF, RXMSBF
+    safe_mmio_write32(0x1000_5430, (m19 & !0x0f00_0000) | 0x0100_0000); // GPIO158 -> func 1 (SPI0_CLK)
+}
+
+fn gc7272_spi_setup() {
+    const SPI0_BASE: usize = 0x1100_a000;
+    // Ungate SPI0 clock in infracfg_ao
+    safe_mmio_write32(0x1000_108c, 1 << 21);
+    // Ensure GPIO23 (RST) is output HIGH and GPIO1 (IRQ) is input
+    safe_mmio_write32(0x1000_5104, 1 << 23);
+    safe_mmio_write32(0x1000_5004, 1 << 23);
+    safe_mmio_write32(0x1000_5008, 1 << 1);
+    // Configure GPIO156 (SPI0_CSB) as manual active-low GPIO output (func 0),
+    // preload GPIO158 (SPI0_CLK) DOUT=HIGH / DIR=OUT for glitch-free FIFO resets,
+    // and set GPIO155 (MI), GPIO157 (MO), GPIO158 (CLK) to func 1 (SPI0).
+    safe_mmio_write32(0x1000_5144, (1 << 28) | (1 << 30)); // CS HIGH, CLK latch HIGH
+    safe_mmio_write32(0x1000_5044, (1 << 28) | (1 << 30)); // DIR OUT
+    let mode19 = safe_mmio_read32(0x1000_5430);
+    safe_mmio_write32(0x1000_5430, (mode19 & !0x0fff_f000) | 0x0110_1000);
+    // Reset SPI0 FIFO glitch-free while CS is HIGH, then configure ~6 MHz timing
+    gc7272_spi_fifo_reset();
+    safe_mmio_write32(SPI0_BASE + 0x00, 0x000a_000a);
+    safe_mmio_write32(SPI0_BASE + 0x28, 0x0008_0008);
+    safe_mmio_write32(SPI0_BASE + 0x04, 0x0000_000a);
+    safe_mmio_write32(SPI0_BASE + 0x0c, 0);
+    gc7272_delay_us(50);
+}
+
+fn gc7272_spi_write_raw_no_cs(tx: &[u8]) {
+    const SPI0_BASE: usize = 0x1100_a000;
+    let mut off = 0usize;
+    let n = tx.len();
+    while off < n {
+        if (off & 0x1fff) == 0 {
+            pet_mediatek_watchdog();
+        }
+        let clen = (n - off).min(32);
+        let nwords = (clen + 3) / 4;
+        gc7272_spi_fifo_reset();
+        let _ = safe_mmio_read32(SPI0_BASE + 0x1c);
+        safe_mmio_write32(SPI0_BASE + 0x04, (((clen as u32) - 1) << 16) | 0x000a);
+        for w_idx in 0..nwords {
+            let mut wb = [0u8; 4];
+            let base_i = off + w_idx * 4;
+            let rem = (clen - w_idx * 4).min(4);
+            wb[..rem].copy_from_slice(&tx[base_i..base_i + rem]);
+            safe_mmio_write32(SPI0_BASE + 0x10, u32::from_le_bytes(wb));
+        }
+        safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3301);
+        for _ in 0..16_384 {
+            let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
+            let st1 = safe_mmio_read32(SPI0_BASE + 0x20);
+            if (st0 & 1) != 0 && (st1 & 1) != 0 {
+                break;
+            }
+        }
+        for _ in 0..nwords {
+            let _ = safe_mmio_read32(SPI0_BASE + 0x14);
+        }
+        off += clen;
+    }
+}
+
+#[repr(C, align(64))]
+struct Gc7272DmaBuf([u8; 128]);
+
+static mut GC7272_DMA_TX: Gc7272DmaBuf = Gc7272DmaBuf([0u8; 128]);
+static mut GC7272_DMA_RX: Gc7272DmaBuf = Gc7272DmaBuf([0u8; 128]);
+
+#[inline(always)]
+fn clean_inval_dcache_range(start: usize, len: usize) {
+    // SCTLR_EL1.M == 0 & SCTLR_EL1.C == 0 at bare-metal entry: memory is uncached
+    // and directly coherent with SPI0 DMA; dc civac traps on uncached memory, so use dsb sy.
+    flush_dcache_range(start, len);
+}
+
+fn gc7272_spi_write(tx: &[u8]) {
+    const SPI0_BASE: usize = 0x1100_a000;
+    if tx.len() == 65536 {
+        // Use SPI0 Hardware TX DMA (64 packets x 1024 bytes = 65,536 bytes) matching
+        // MediaTek spi-mt65xx + gcore_spi_write so the GC7272 ROM bootloader receives
+        // a continuous 65,536-byte stream under one CS-low window without FIFO gaps.
+        clean_inval_dcache_range(tx.as_ptr() as usize, tx.len());
+        gc7272_spi_fifo_reset();
+        let _ = safe_mmio_read32(SPI0_BASE + 0x1c);
+        safe_mmio_write32(SPI0_BASE + 0x08, tx.as_ptr() as usize as u32);
+        safe_mmio_write32(SPI0_BASE + 0x2c, 0);
+        safe_mmio_write32(SPI0_BASE + 0x04, ((1024 - 1) << 16) | ((64 - 1) << 8) | 0x000a);
+        safe_mmio_write32(0x1000_5148, 1 << 28); // CS LOW
+        // CPHA(8) | CPOL(9) | TX_DMA(11) | TXMSBF(12) | RXMSBF(13) | ACT(0) = 0x0000_3b01
+        safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3b01);
+        for step in 0..1_000_000u32 {
+            if (step & 0x3fff) == 0 {
+                pet_mediatek_watchdog();
+            }
+            let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
+            let st1 = safe_mmio_read32(SPI0_BASE + 0x20);
+            if (st0 & 1) != 0 && (st1 & 1) != 0 {
+                break;
+            }
+        }
+        safe_mmio_write32(0x1000_5144, 1 << 28); // CS HIGH
+        safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3300);
+        safe_mmio_write32(SPI0_BASE + 0x08, 0);
+        return;
+    }
+    safe_mmio_write32(0x1000_5148, 1 << 28); // CS LOW
+    gc7272_spi_write_raw_no_cs(tx);
+    safe_mmio_write32(0x1000_5144, 1 << 28); // CS HIGH
+}
+
+fn gc7272_spi_read(rx: &mut [u8]) {
+    const SPI0_BASE: usize = 0x1100_a000;
+    let n = rx.len();
+    safe_mmio_write32(0x1000_5148, 1 << 28); // CS LOW
+    let mut off = 0usize;
+    while off < n {
+        let clen = (n - off).min(32);
+        let nwords = (clen + 3) / 4;
+        gc7272_spi_fifo_reset();
+        let _ = safe_mmio_read32(SPI0_BASE + 0x1c);
+        safe_mmio_write32(SPI0_BASE + 0x04, (((clen as u32) - 1) << 16) | 0x000a);
+        for _ in 0..nwords {
+            safe_mmio_write32(SPI0_BASE + 0x10, 0xffff_ffff);
+        }
+        safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3301);
+        for _ in 0..16_384 {
+            let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
+            let st1 = safe_mmio_read32(SPI0_BASE + 0x20);
+            if (st0 & 1) != 0 && (st1 & 1) != 0 {
+                break;
+            }
+        }
+        for w_idx in 0..nwords {
+            let rw = safe_mmio_read32(SPI0_BASE + 0x14).to_le_bytes();
+            let base_i = off + w_idx * 4;
+            let rem = (clen - w_idx * 4).min(4);
+            rx[base_i..base_i + rem].copy_from_slice(&rw[..rem]);
+        }
+        off += clen;
+    }
+    safe_mmio_write32(0x1000_5144, 1 << 28); // CS HIGH
+}
+
+fn gc7272_enter_idm() {
+    gc7272_spi_write(&GC7272_IDM_KEY);
+    gc7272_delay_us(1000);
+    gc7272_spi_write(&[0x4c, 0x0f, 0xf0]);
+    gc7272_delay_us(1000);
+}
+
+fn gc7272_exit_idm() {
+    gc7272_spi_write(&[0x4c, 0x0a, 0xf5]);
+    gc7272_delay_us(1000);
+}
+
+fn gc7272_idm_write_reg(addr: u32, data: &[u8]) {
+    const SPI0_BASE: usize = 0x1100_a000;
+    let hdr = [
+        0x4c,
+        0x05,
+        0xfa,
+        (addr >> 24) as u8,
+        (addr >> 16) as u8,
+        (addr >> 8) as u8,
+        addr as u8,
+    ];
+    let total = 7 + data.len();
+    let mut off = 0usize;
+    safe_mmio_write32(0x1000_5148, 1 << 28); // CS LOW
+    while off < total {
+        if (off & 0x3ff) == 0 {
+            pet_mediatek_watchdog();
+        }
+        let clen = (total - off).min(32);
+        let nwords = (clen + 3) / 4;
+        let mut chunk = [0u8; 32];
+        for i in 0..clen {
+            let g_idx = off + i;
+            chunk[i] = if g_idx < 7 {
+                hdr[g_idx]
+            } else {
+                data[g_idx - 7]
+            };
+        }
+        gc7272_spi_fifo_reset();
+        let _ = safe_mmio_read32(SPI0_BASE + 0x1c);
+        safe_mmio_write32(SPI0_BASE + 0x04, (((clen as u32) - 1) << 16) | 0x000a);
+        for w_idx in 0..nwords {
+            let wb: [u8; 4] = chunk[w_idx * 4..w_idx * 4 + 4].try_into().unwrap();
+            safe_mmio_write32(SPI0_BASE + 0x10, u32::from_le_bytes(wb));
+        }
+        safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3301);
+        for _ in 0..16_384 {
+            let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
+            let st1 = safe_mmio_read32(SPI0_BASE + 0x20);
+            if (st0 & 1) != 0 && (st1 & 1) != 0 {
+                break;
+            }
+        }
+        for _ in 0..nwords {
+            let _ = safe_mmio_read32(SPI0_BASE + 0x14);
+        }
+        off += clen;
+    }
+    safe_mmio_write32(0x1000_5144, 1 << 28); // CS HIGH
+}
+
+fn gc7272_idm_read_reg(addr: u32, rx16: &mut [u8; 16]) {
+    const SPI0_BASE: usize = 0x1100_a000;
+    let tx = [
+        0x4c,
+        0x04,
+        0xfb,
+        (addr >> 24) as u8,
+        (addr >> 16) as u8,
+        (addr >> 8) as u8,
+        addr as u8,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+    ];
+    gc7272_spi_fifo_reset();
+    safe_mmio_write32(0x1000_5148, 1 << 28); // CS LOW
+    let _ = safe_mmio_read32(SPI0_BASE + 0x1c);
+    safe_mmio_write32(SPI0_BASE + 0x04, (15 << 16) | 0x000a);
+    for w_idx in 0..4usize {
+        let wb: [u8; 4] = tx[w_idx * 4..w_idx * 4 + 4].try_into().unwrap();
+        safe_mmio_write32(SPI0_BASE + 0x10, u32::from_le_bytes(wb));
+    }
+    safe_mmio_write32(SPI0_BASE + 0x18, 0x0000_3301);
+    for _ in 0..16_384 {
+        let st0 = safe_mmio_read32(SPI0_BASE + 0x1c);
+        let st1 = safe_mmio_read32(SPI0_BASE + 0x20);
+        if (st0 & 1) != 0 && (st1 & 1) != 0 {
+            break;
+        }
+    }
+    for w_idx in 0..4usize {
+        let rw = safe_mmio_read32(SPI0_BASE + 0x14).to_le_bytes();
+        rx16[w_idx * 4..w_idx * 4 + 4].copy_from_slice(&rw);
+    }
+    safe_mmio_write32(0x1000_5144, 1 << 28); // CS HIGH
+}
+
+fn gc7272_idm_read_id(out_buf: &mut [u8; 32]) -> u32 {
+    gc7272_spi_setup();
+    gc7272_enter_idm();
+    let mut r94 = [0u8; 16];
+    gc7272_idm_read_reg(0xc000_0094, &mut r94);
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(0xc000_0096, &[r94[11] & 0x7f]);
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(0xd000_ff00, &[0x55, 0xaa, 0x66]);
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(0xd000_ff00, &[0x10]);
+    gc7272_delay_us(1000);
+    let mut rid = [0u8; 16];
+    gc7272_idm_read_reg(0xd000_0400, &mut rid);
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(0xd000_ff00, &[0x00]);
+    gc7272_delay_us(1000);
+    gc7272_exit_idm();
+    out_buf[0..16].copy_from_slice(&rid);
+    out_buf[16..32].copy_from_slice(&r94);
+    ((rid[9] as u32) << 8) | (rid[10] as u32)
+}
+
+fn gc7272_upgrade_soft_reset() {
+    gc7272_enter_idm();
+    gc7272_idm_write_reg(0x4000_0050, &[0x00]);
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(0x8002_0000, &[0x00, 0x01, 0x00, 0x00]);
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(
+        0x8002_0100,
+        &[
+            0x02, 0xea, 0x00, 0x40, 0x23, 0xea, 0x00, 0x40,
+            0x00, 0x30, 0x54, 0xb3, 0x3c, 0x78, 0x00, 0x00,
+        ],
+    );
+    gc7272_delay_us(1000);
+    gc7272_idm_write_reg(0x4000_0050, &[0x01]);
+    gc7272_delay_us(1000);
+    gc7272_exit_idm();
+    gc7272_delay_us(50_000);
+}
+
+fn gc7272_hostdownload_idm2() -> u32 {
+    gc7272_spi_setup();
+    let mut id_buf = [0u8; 32];
+    let chip_id = gc7272_idm_read_id(&mut id_buf);
+    gc7272_enter_idm();
+    for chunk in 0..64usize {
+        if (chunk & 7) == 0 {
+            pet_mediatek_watchdog();
+        }
+        let addr = 0x8002_0000u32 + (chunk as u32) * 1024;
+        gc7272_idm_write_reg(addr, &GC7272_FW[chunk * 1024..(chunk + 1) * 1024]);
+        gc7272_delay_us(1000);
+    }
+    // gcore_run_pram_fw2: write 0x81 to 0x40000050, wait 1ms, exit IDM
+    gc7272_idm_write_reg(0x4000_0050, &[0x81]);
+    gc7272_delay_us(1000);
+    gc7272_exit_idm();
+    gc7272_delay_us(50_000);
+    let mut pkt = [0u8; 65];
+    gc7272_spi_read(&mut pkt);
+    unsafe {
+        let mut snap = [0u8; 32];
+        snap.copy_from_slice(&pkt[0..32]);
+        write_volatile(core::ptr::addr_of_mut!(GC7272_LAST_PKT), snap);
+    }
+    (chip_id << 16) | ((pkt[0] as u32) << 8) | (pkt[64] as u32)
+}
+
+fn gc7272_hostdownload_reset_b1() -> u32 {
+    gc7272_spi_setup();
+    // Pulse GPIO23 (RST) LOW for 2ms, then HIGH (gcore_update_hostdownload_trigger)
+    safe_mmio_write32(0x1000_5108, 1 << 23);
+    gc7272_delay_us(2_000);
+    safe_mmio_write32(0x1000_5104, 1 << 23);
+    for _ in 0..30 {
+        gc7272_delay_us(1_000);
+        if (safe_mmio_read32(0x1000_5200) >> 1) & 1 != 0 {
+            break;
+        }
+    }
+    gc7272_delay_us(1_000);
+    let mut b0 = [0u8; 1];
+    for _ in 0..16 {
+        gc7272_spi_read(&mut b0);
+        if b0[0] == 0xb1 {
+            break;
+        }
+        gc7272_delay_us(1_000);
+    }
+    // Write 65,536-byte firmware image in one CS-low SPI0 Hardware DMA transfer
+    gc7272_spi_write(GC7272_FW);
+    // Allow 15ms for the GC7272 ROM bootloader to compute CRC32 and boot PRAM FW
+    // without CS/CLK disturbance before reading status on the next GPIO1 assertion
+    gc7272_delay_us(15_000);
+    let mut b1 = [0u8; 1];
+    for step in 0..85u32 {
+        if (step & 15) == 0 {
+            pet_mediatek_watchdog();
+        }
+        if (safe_mmio_read32(0x1000_5200) >> 1) & 1 != 0 {
+            gc7272_spi_read(&mut b1);
+            break;
+        }
+        gc7272_delay_us(1_000);
+    }
+    if b1[0] == 0 {
+        gc7272_spi_read(&mut b1);
+    }
+    gc7272_delay_us(50_000);
+    let mut pkt = [0u8; 65];
+    gc7272_spi_read(&mut pkt);
+    let gpio1 = ((safe_mmio_read32(0x1000_5200) >> 1) & 1) as u32;
+    let status = (b0[0] as u32)
+        | ((b1[0] as u32) << 8)
+        | (gpio1 << 16)
+        | ((pkt[0] as u32) << 24);
+    unsafe {
+        let mut snap = [0u8; 32];
+        snap.copy_from_slice(&pkt[0..32]);
+        write_volatile(core::ptr::addr_of_mut!(GC7272_LAST_PKT), snap);
+        write_volatile(core::ptr::addr_of_mut!(GC7272_BOOT_STATUS), status);
+    }
+    status
+}
+
+fn gc7272_poll_touch(force_read: bool) -> Option<(u16, u16, bool)> {
+    let irq_high = (safe_mmio_read32(0x1000_5200) >> 1) & 1 != 0;
+    if !irq_high && !force_read {
+        return None;
+    }
+    let mut pkt = [0u8; 65];
+    gc7272_spi_read(&mut pkt);
+    if pkt[0..8] != [0u8; 8]
+        && pkt[0..8] != [0xff; 8]
+        && pkt[0..8] != [0xff, 0xff, 0x72, 0x02, 0x00, 0x01, 0xff, 0xff]
+        && !(pkt[0] == 0xb1 && pkt[1..64].iter().all(|&b| b == 0))
+    {
+        unsafe {
+            let mut snap = [0u8; 32];
+            snap.copy_from_slice(&pkt[0..32]);
+            write_volatile(core::ptr::addr_of_mut!(GC7272_LAST_PKT), snap);
+        }
+    }
+    if pkt[0] == 0xb1 && pkt[1..64].iter().all(|&b| b == 0) {
+        unsafe {
+            let cd = read_volatile(core::ptr::addr_of!(GC7272_B1_COOLDOWN));
+            if cd == 0 {
+                // Run clean 1-byte 0xB1 read + 65,536-byte DMA hostdownload so the
+                // 64 trailing bytes of the 65-byte poll read don't shift the FW stream.
+                let _ = gc7272_hostdownload_reset_b1();
+                write_volatile(core::ptr::addr_of_mut!(GC7272_B1_COOLDOWN), 512);
+            } else {
+                write_volatile(core::ptr::addr_of_mut!(GC7272_B1_COOLDOWN), cd - 1);
+            }
+        }
+        return None;
+    }
+    if pkt[0..8] == [0u8; 8]
+        || pkt[0..8] == [0xff; 8]
+        || pkt[0..8] == [0xff, 0xff, 0x72, 0x02, 0x00, 0x01, 0xff, 0xff]
+    {
+        return None;
+    }
+    for slot in 0..10usize {
+        let off = slot * 6;
+        let b0 = pkt[off];
+        if b0 != 0 && b0 != 0xff && b0 <= 0x57 {
+            let raw_x = ((pkt[off + 1] as u16) << 4) | ((pkt[off + 3] as u16) >> 4);
+            let raw_y = ((pkt[off + 2] as u16) << 4) | ((pkt[off + 3] as u16) & 0x0f);
+            if raw_x < 720 && raw_y < 1640 && (raw_x != 0 || raw_y != 0) {
+                return Some((raw_x, raw_y, true));
+            }
+        }
+    }
+    if (pkt[0] & 0x80) != 0 {
+        return Some((0, 0, false));
+    }
+    let sum = pkt[0..64].iter().fold(0u8, |acc, &b| acc.wrapping_add(b));
+    if pkt[64] != sum.wrapping_neg() {
+        return None;
+    }
+    Some((0, 0, false))
 }
 
 fn tone_fatal_cleanup() {

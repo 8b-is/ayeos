@@ -357,85 +357,85 @@ pub struct TrackerStep {
     pub duration_us: u32,
 }
 
-/// 8-row ScreamTracker (S3M) studio pattern exercising ascending pitch (125Hz * N), smooth gain & L/R PAs.
+/// 8-row ScreamTracker (S3M) studio pattern exercising exact concert pitch, smooth gain & L/R PAs.
 pub const PATTERN: [TrackerStep; 8] = [
     TrackerStep {
         note: "C-4",
-        key_index: 2,
-        hz: 250,
-        div: 2,
-        gain_reg: 0x060c,
-        gain_db: -4,
+        key_index: 0,
+        hz: 262,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
         spk_mask: 3,
-        duration_us: 120_000,
+        duration_us: 140_000,
+    },
+    TrackerStep {
+        note: "E-4",
+        key_index: 4,
+        hz: 330,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
+        spk_mask: 3,
+        duration_us: 140_000,
     },
     TrackerStep {
         note: "G-4",
-        key_index: 4,
-        hz: 375,
-        div: 3,
-        gain_reg: 0x060c,
-        gain_db: -4,
-        spk_mask: 3,
-        duration_us: 120_000,
-    },
-    TrackerStep {
-        note: "C-5",
-        key_index: 5,
-        hz: 500,
-        div: 4,
-        gain_reg: 0x0408,
-        gain_db: 0,
-        spk_mask: 3,
-        duration_us: 120_000,
-    },
-    TrackerStep {
-        note: "E-5",
         key_index: 7,
-        hz: 625,
-        div: 5,
-        gain_reg: 0x0408,
-        gain_db: 0,
+        hz: 392,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
         spk_mask: 3,
-        duration_us: 120_000,
+        duration_us: 140_000,
     },
     TrackerStep {
-        note: "G-5",
+        note: "A-4",
         key_index: 9,
-        hz: 750,
-        div: 6,
-        gain_reg: 0x0408,
-        gain_db: 0,
-        spk_mask: 1,
-        duration_us: 140_000,
-    },
-    TrackerStep {
-        note: "E-5",
-        key_index: 7,
-        hz: 625,
-        div: 5,
-        gain_reg: 0x0408,
-        gain_db: 0,
-        spk_mask: 2,
+        hz: 440,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
+        spk_mask: 3,
         duration_us: 140_000,
     },
     TrackerStep {
         note: "C-5",
-        key_index: 5,
-        hz: 500,
-        div: 4,
-        gain_reg: 0x060c,
-        gain_db: -4,
+        key_index: 12,
+        hz: 523,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
+        spk_mask: 1,
+        duration_us: 150_000,
+    },
+    TrackerStep {
+        note: "A-4",
+        key_index: 9,
+        hz: 440,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
+        spk_mask: 2,
+        duration_us: 150_000,
+    },
+    TrackerStep {
+        note: "G-4",
+        key_index: 7,
+        hz: 392,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
         spk_mask: 3,
-        duration_us: 140_000,
+        duration_us: 150_000,
     },
     TrackerStep {
         note: "C-4",
-        key_index: 2,
-        hz: 250,
-        div: 2,
-        gain_reg: 0x060c,
-        gain_db: -4,
+        key_index: 0,
+        hz: 262,
+        div: 16,
+        gain_reg: 0x0000,
+        gain_db: 8,
         spk_mask: 3,
         duration_us: 180_000,
     },
@@ -507,8 +507,8 @@ fn startup_route_core(b: &mut impl Bus, r: &mut Report, enable_pa: bool) -> Resu
     for (reg, v) in [(0x229a, 6), (0x2296, 0xcba1), (0x229a, 3), (0x229a, 0xb)] {
         update(b, r, reg, 0xffff, v)?;
     }
-    // Set SGEN_AMP_DIV_CH1_CTL = 3 (0x3000, -18 dBFS digital headroom) so sine wave never clips
-    update(b, r, 0x22c0, 0xff3f, 0x3000)?;
+    // Set SGEN_AMP_DIV_CH1_CTL = 0 (0x0000, 0 dBFS full-scale amplitude)
+    update(b, r, 0x22c0, 0xff3f, 0)?;
     update(b, r, 0x22c2, 0xffff, 1)?;
     update(b, r, 0x2290, 1, 1)?; // DAC In Mux = Sgen (MT6358_AFE_TOP_CON0)
     update(b, r, 0x22c0, 0x80, 0x80)?; // enable, still muted
@@ -561,7 +561,7 @@ fn startup_route_core(b: &mut impl Bus, r: &mut Report, enable_pa: bool) -> Resu
             pa(b, r, addr, reg, Some(v))?;
         }
     }
-    delay(b, r, 30_000) // accommodates the documented ZCD 30ms timeout
+    delay(b, r, if enable_pa { 30_000 } else { 8_000 }) // 30ms for boot self-test; 8ms fast start for interactive UI
 }
 
 fn startup_route(b: &mut impl Bus, r: &mut Report) -> Result<()> {
@@ -711,12 +711,32 @@ pub fn run(b: &mut impl Bus, gates: bool) -> Report {
     r
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiAction {
+    Continue,
+    ChangePitch(u16),
+    Preempt,
+}
+
 /// Interactive post-boot ScreamTracker / Music Keyboard sequencer.
 /// Does not mutate frozen boot reports; always runs `shutdown` + Off check.
 pub fn play_steps(
     b: &mut impl Bus,
     steps: &[TrackerStep],
+    on_step: impl FnMut(usize, &TrackerStep),
+) -> Report {
+    play_steps_with_ui(b, steps, on_step, |_| UiAction::Continue)
+}
+
+/// UI-preemptible interactive ScreamTracker / Piano synth engine.
+/// Polls `on_ui_tick` every 5ms (200Hz) so P0 UI/Touch gestures can perform
+/// zero-gap keyboard glissando (`UiAction::ChangePitch`) or immediately
+/// preempt background audio (`UiAction::Preempt`) for scrolling / pinch-zoom.
+pub fn play_steps_with_ui(
+    b: &mut impl Bus,
+    steps: &[TrackerStep],
     mut on_step: impl FnMut(usize, &TrackerStep),
+    mut on_ui_tick: impl FnMut(u64) -> UiAction,
 ) -> Report {
     let mut r = Report::new();
     if steps.is_empty() {
@@ -734,72 +754,148 @@ pub fn play_steps(
         if r.count > EVENTS - 64 {
             r.count = 0;
         }
-        // Set 0x2308 (AFE_PMIC_NEWIF_CFG3) bits 15:12 = 0 (8kHz downlink rate so SGEN base = 125Hz)
+        // Set 0x2308 (AFE_PMIC_NEWIF_CFG3) bits 15:12 = 8 (48kHz native DAC sample rate)
         // and configure dual SDM (0xcfa1), HS/RCV (0x2414), and HPL/HPR (0x2408/0x240a) while PAs are OFF.
         for (reg, mask, v) in [
-            (0x2308, 0xf000, 0x0000),
+            (0x2308, 0xf000, 0x8000),
             (0x239e, 0x0400, 0x0400),
             (0x2296, 0xffff, 0xcfa1),
             (0x2410, 0x0047, 0x0000),
             (0x240c, 0xffff, 0xc033),
             (0x2414, 0xffff, 0x0093),
-            (0x248e, 0x001f, 0x0008),
+            (0x248e, 0x001f, 0x0000),
             (0x2414, 0x000c, 0x0008),
-            (0x248c, 0x0f9f, 0x060c),
-            (0x248a, 0x0f9f, 0x060c),
+            (0x248c, 0x0f9f, 0x0000),
+            (0x248a, 0x0f9f, 0x0000),
             (0x2408, 0x3fff, 0x3aff),
             (0x240a, 0x00ff, 0x0003),
         ] {
             update(b, &mut r, reg, mask, v)?;
         }
-        delay(b, &mut r, 5_000)?;
+        delay(b, &mut r, 3_000)?;
         r.phase = 2;
         r.opened = deadline(b, r.start)?;
         let mut last_mask = 0u8;
+        let mut preempted = false;
         for (idx, step) in steps.iter().enumerate() {
+            if preempted {
+                break;
+            }
             on_step(idx, step);
             if r.count > EVENTS - 96 {
                 r.count = 0;
             }
             r.start = b.ticks()?;
-            let div = (step.div & 0x0f).clamp(1, 15);
+            let _div = (step.div & 0x1f).clamp(1, 31);
             let gain = step.gain_reg & 0x0f9f;
             let mask = if step.spk_mask & 3 == 0 { 3 } else { step.spk_mask & 3 };
-            // Mute SGEN (0x22c0 bit 6 = 1) while changing frequency multiplier (0x22c2) to prevent pop
-            update(b, &mut r, 0x22c0, 0x40, 0x40)?;
-            update(b, &mut r, 0x248a, 0x0f9f, gain)?;
-            update(b, &mut r, 0x248c, 0x0f9f, gain)?;
-            update(b, &mut r, 0x22c2, 0xffff, div)?;
+            // On step 0 (while external SmartPAs 0x58/0x59 are still OFF), lock MT6358 SGEN
+            // (0x22a4) in closed loop at 3kHz (0x22c2=0x0404 @ 48kHz rate) to its full-scale
+            // crest (|L| >= 58, |R| >= 58 -> 62/-60, +20 dB louder than 64-poll 125Hz timeout!)
+            // and freeze it (0x22c2 = 0x0000), then mute via 0x22c0 = 0x55b0 (keeping bit 7
+            // C_DAC_EN = 1 so the frozen full-scale crest is preserved across all notes).
+            if idx == 0 {
+                update(b, &mut r, 0x22c0, 0xc0, 0x40)?;
+                update(b, &mut r, 0x248a, 0x0f9f, gain)?;
+                update(b, &mut r, 0x248c, 0x0f9f, gain)?;
+                update(b, &mut r, 0x22c2, 0xffff, 4)?;
+                b.pmic_write(0x22c0, 0x0080)?;
+                b.pmic_write(0x22c2, 0x0404)?;
+                for _ in 0..4096 {
+                    let mon = b.pmic_read(0x22a4)?;
+                    let l = ((mon >> 8) as i8).unsigned_abs();
+                    let r_ch = ((mon & 0xff) as i8).unsigned_abs();
+                    if l >= 58 && r_ch >= 58 {
+                        break;
+                    }
+                }
+                b.pmic_write(0x22c2, 0x0000)?;
+                b.pmic_write(0x22c0, 0x55b0)?;
+            } else {
+                b.pmic_write(0x22c0, 0x55b0)?;
+                update(b, &mut r, 0x248a, 0x0f9f, gain)?;
+                update(b, &mut r, 0x248c, 0x0f9f, gain)?;
+            }
             if mask != last_mask {
                 for (bit, addr) in [(1u8, 0x58u8), (2u8, 0x59u8)] {
                     let sysctrl = if mask & bit != 0 { 0x3f } else { 0 };
                     pa(b, &mut r, addr, 2, Some(sysctrl))?;
                 }
                 if last_mask == 0 {
-                    delay(b, &mut r, 8_000)?;
+                    delay(b, &mut r, 10_000)?;
                 }
                 last_mask = mask;
             }
-            update(b, &mut r, 0x22c0, 0x40, 0)?;
-            let dur_ticks = u64::from(step.duration_us.clamp(20_000, 1_500_000)) * 13;
+            // 32-step high-resolution rounded-cosine LUT across all 6 attenuation levels
+            // (0x55b0=0, 0x4480=3, 0x3380=7, 0x2280=15, 0x1180=31, 0x0080=62) sampled at 48kHz DAC rate.
+            const WAVE_32: [u16; 32] = [
+                0x55b0, 0x55b0, 0x4480, 0x3380, 0x2280, 0x2280, 0x1180, 0x1180,
+                0x1180, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080,
+                0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x1180,
+                0x1180, 0x1180, 0x2280, 0x2280, 0x3380, 0x4480, 0x55b0, 0x55b0,
+            ];
+            let mut hz = u64::from(step.hz.clamp(110, 2000));
+            let mut step_ticks = (HZ / (hz * 32)).max(1);
+            let mut dur_ticks = u64::from(step.duration_us.clamp(20_000, 1_500_000)) * 13;
             let step_start = deadline(b, r.start)?;
             let mut prior = step_start;
+            let mut last_ui_check = step_start;
+            let mut last_w = 0x55b0u16;
             let mut finished = false;
             for _ in 0..WAIT_POLLS {
                 let now = deadline(b, r.start)?;
                 if now < prior {
                     return Err(Error::Timer);
                 }
-                if now - step_start >= dur_ticks {
+                let elapsed = now - step_start;
+                if elapsed >= dur_ticks {
                     finished = true;
                     break;
+                }
+                // P0 UI Thread Preemption Check every 5ms (65,000 ticks) after initial 25ms attack
+                if elapsed >= 25_000 * 13 && now.saturating_sub(last_ui_check) >= 65_000 {
+                    last_ui_check = now;
+                    match on_ui_tick(elapsed) {
+                        UiAction::Continue => {}
+                        UiAction::ChangePitch(new_hz) => {
+                            let clamped = u64::from(new_hz.clamp(110, 2000));
+                            if clamped != hz {
+                                hz = clamped;
+                                step_ticks = (HZ / (hz * 32)).max(1);
+                            }
+                            // Extend sustain while finger holds/slides on keyboard (up to 1.4s ceiling)
+                            let ext = (elapsed + 120_000 * 13).min(1_400_000 * 13);
+                            if ext > dur_ticks {
+                                dur_ticks = ext;
+                            }
+                        }
+                        UiAction::Preempt => {
+                            finished = true;
+                            preempted = true;
+                            break;
+                        }
+                    }
+                }
+                let phase_idx = ((elapsed / step_ticks) & 31) as usize;
+                let base_w = WAVE_32[phase_idx];
+                let rem = dur_ticks - elapsed;
+                let w = if elapsed < 3_000 * 13 || rem < 3_000 * 13 {
+                    base_w.max(0x3380)
+                } else if elapsed < 6_000 * 13 || rem < 6_000 * 13 {
+                    base_w.max(0x1180)
+                } else {
+                    base_w
+                };
+                if w != last_w {
+                    b.pmic_write(0x22c0, w)?;
+                    last_w = w;
                 }
                 prior = now;
             }
             if !finished {
                 return Err(Error::Timer);
             }
-            update(b, &mut r, 0x22c0, 0x40, 0x40)?;
+            b.pmic_write(0x22c0, 0x55b0)?;
         }
         Ok(())
     })();
@@ -897,7 +993,7 @@ pub fn debug_synth_start(b: &mut impl Bus, div: u16, gain_reg: u16, spk_mask: u8
             (0x248a, 0x0f9f, gain_reg & 0x0f9f),
             (0x2408, 0x3fff, 0x3aff),
             (0x240a, 0x00ff, 0x0003),
-            (0x22c2, 0xffff, (div & 0x0f).clamp(1, 15)),
+            (0x22c2, 0xffff, (div & 0x1f).clamp(1, 31)),
         ] {
             update(b, &mut r, reg, mask, v)?;
         }
@@ -909,7 +1005,7 @@ pub fn debug_synth_start(b: &mut impl Bus, div: u16, gain_reg: u16, spk_mask: u8
         delay(b, &mut r, 8_000)?;
         r.phase = 2;
         r.opened = b.ticks()?;
-        update(b, &mut r, 0x22c0, 0x40, 0)?;
+        update(b, &mut r, 0x22c0, 0xc0, 0x80)?;
         Ok(())
     })();
     if let Err(e) = res {
