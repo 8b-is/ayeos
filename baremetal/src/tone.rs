@@ -754,10 +754,10 @@ pub fn play_steps_with_ui(
         if r.count > EVENTS - 64 {
             r.count = 0;
         }
-        // Set 0x2308 (AFE_PMIC_NEWIF_CFG3) bits 15:12 = 8 (48kHz native DAC sample rate)
+        // Set 0x2308 (AFE_PMIC_NEWIF_CFG3) bits 15:12 = 0 (8kHz SGEN base rate)
         // and configure dual SDM (0xcfa1), HS/RCV (0x2414), and HPL/HPR (0x2408/0x240a) while PAs are OFF.
         for (reg, mask, v) in [
-            (0x2308, 0xf000, 0x8000),
+            (0x2308, 0xf000, 0x0000),
             (0x239e, 0x0400, 0x0400),
             (0x2296, 0xffff, 0xcfa1),
             (0x2410, 0x0047, 0x0000),
@@ -790,22 +790,22 @@ pub fn play_steps_with_ui(
             let gain = step.gain_reg & 0x0f9f;
             let mask = if step.spk_mask & 3 == 0 { 3 } else { step.spk_mask & 3 };
             // On step 0 (while external SmartPAs 0x58/0x59 are still OFF), lock MT6358 SGEN
-            // (0x22a4) in closed loop at 3kHz (0x22c2=0x0404 @ 48kHz rate) to its full-scale
-            // crest (|L| >= 58, |R| >= 58 -> 62/-60, +20 dB louder than 64-poll 125Hz timeout!)
-            // and freeze it (0x22c2 = 0x0000), then mute via 0x22c0 = 0x55b0 (keeping bit 7
-            // C_DAC_EN = 1 so the frozen full-scale crest is preserved across all notes).
+            // (0x22a4) in closed loop at 1kHz (0x22c2=0x0808, quarter-cycle 250us) across up
+            // to 4096 polls (~7.5ms) to its full-scale crest (|L| >= 56, |R| >= 56 -> 62/-60,
+            // +20 dB louder than 64-poll 125Hz timeout!) and freeze it (0x22c2 = 0x0000), then
+            // mute via 0x22c0 = 0x55b0 (keeping bit 7 C_DAC_EN = 1 so the crest is preserved).
             if idx == 0 {
                 update(b, &mut r, 0x22c0, 0xc0, 0x40)?;
                 update(b, &mut r, 0x248a, 0x0f9f, gain)?;
                 update(b, &mut r, 0x248c, 0x0f9f, gain)?;
-                update(b, &mut r, 0x22c2, 0xffff, 4)?;
+                update(b, &mut r, 0x22c2, 0xffff, 8)?;
                 b.pmic_write(0x22c0, 0x0080)?;
-                b.pmic_write(0x22c2, 0x0404)?;
+                b.pmic_write(0x22c2, 0x0808)?;
                 for _ in 0..4096 {
                     let mon = b.pmic_read(0x22a4)?;
                     let l = ((mon >> 8) as i8).unsigned_abs();
                     let r_ch = ((mon & 0xff) as i8).unsigned_abs();
-                    if l >= 58 && r_ch >= 58 {
+                    if l >= 56 && r_ch >= 56 {
                         break;
                     }
                 }
@@ -827,7 +827,7 @@ pub fn play_steps_with_ui(
                 last_mask = mask;
             }
             // 32-step high-resolution rounded-cosine LUT across all 6 attenuation levels
-            // (0x55b0=0, 0x4480=3, 0x3380=7, 0x2280=15, 0x1180=31, 0x0080=62) sampled at 48kHz DAC rate.
+            // (0x55b0=0, 0x4480=3, 0x3380=7, 0x2280=15, 0x1180=31, 0x0080=62).
             const WAVE_32: [u16; 32] = [
                 0x55b0, 0x55b0, 0x4480, 0x3380, 0x2280, 0x2280, 0x1180, 0x1180,
                 0x1180, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080, 0x0080,
@@ -858,13 +858,14 @@ pub fn play_steps_with_ui(
                     match on_ui_tick(elapsed) {
                         UiAction::Continue => {}
                         UiAction::ChangePitch(new_hz) => {
+                            r.start = now;
                             let clamped = u64::from(new_hz.clamp(110, 2000));
                             if clamped != hz {
                                 hz = clamped;
                                 step_ticks = (HZ / (hz * 32)).max(1);
                             }
-                            // Extend sustain while finger holds/slides on keyboard (up to 1.4s ceiling)
-                            let ext = (elapsed + 120_000 * 13).min(1_400_000 * 13);
+                            // Extend sustain while finger holds/slides on keyboard (up to 4s glissando ceiling)
+                            let ext = (elapsed + 120_000 * 13).min(4_000_000 * 13);
                             if ext > dur_ticks {
                                 dur_ticks = ext;
                             }

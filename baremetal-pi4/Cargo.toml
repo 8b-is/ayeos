@@ -1,0 +1,14 @@
+[package]
+name = "ayeos-baremetal-pi4"
+version = "1.0.0"
+edition = "2021"
+description = "100% Bare-Metal #![no_std] #![no_main] Rust OS Kernel (kernel8.img) for Raspberry Pi 4 (BCM2711) — Zero Linux, Zero C, Zero Floats."
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

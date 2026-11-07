@@ -1,0 +1,16 @@
+[package]
+name = "ayeos-uefi-bootloader"
+version = "1.0.0"
+edition = "2021"
+description = "AyeOS Sovereign UEFI Bootloader (Tier 4 #![no_std] x86_64 PE32+ executable) — Ontological p/q, C64 64KB Ring, WaveInt [u8; 79], SpherePOP & Nika Solar Invariants."
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

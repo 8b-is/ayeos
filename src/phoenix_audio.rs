@@ -12,7 +12,8 @@
 /// `.8a` (`8a∞`) Infinity Audio magic header: `0x38 0x61 0xE2 0x9E`.
 pub const EIGHT_A_MAGIC: [u8; 4] = [0x38, 0x61, 0xE2, 0x9E];
 
-/// On-device PhoeniX tuning parameters in `Q10` (`1024 == 1/1`).
+/// On-device PhoeniX tuning parameters in `Q10` (`1024 == 1/1`),
+/// augmented with Goonj Ternary Dark Velvet Noise (`{-1, 0, +1}`), Svara Formant, and Naad SVF Sub.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MobilePhoenixPreset {
     pub sparkle_q10: i64,
@@ -21,11 +22,20 @@ pub struct MobilePhoenixPreset {
     pub punch_q10: i64,
     pub air_q10: i64,
     pub phi_432_q10: i64,
+    pub goonj_velvet_q10: i64,
+    pub svara_formant_q10: i64,
+    pub naad_sub_q10: i64,
     pub stereo_width_q10: i64,
 }
 
 impl Default for MobilePhoenixPreset {
     fn default() -> Self {
+        Self::velvet_sanctuary()
+    }
+}
+
+impl MobilePhoenixPreset {
+    pub const fn velvet_sanctuary() -> Self {
         Self {
             sparkle_q10: 440,
             warmth_q10: 380,
@@ -33,10 +43,187 @@ impl Default for MobilePhoenixPreset {
             punch_q10: 500,
             air_q10: 360,
             phi_432_q10: 300,
+            goonj_velvet_q10: 180,
+            svara_formant_q10: 160,
+            naad_sub_q10: 150,
             stereo_width_q10: 1340,
         }
     }
+
+    pub const fn liquid_gold() -> Self {
+        Self {
+            sparkle_q10: 520,
+            warmth_q10: 480,
+            drive_q10: 310,
+            punch_q10: 540,
+            air_q10: 420,
+            phi_432_q10: 360,
+            goonj_velvet_q10: 210,
+            svara_formant_q10: 220,
+            naad_sub_q10: 210,
+            stereo_width_q10: 1420,
+        }
+    }
+
+    pub const fn riva_cathedral() -> Self {
+        Self {
+            sparkle_q10: 610,
+            warmth_q10: 350,
+            drive_q10: 190,
+            punch_q10: 460,
+            air_q10: 540,
+            phi_432_q10: 420,
+            goonj_velvet_q10: 340,
+            svara_formant_q10: 190,
+            naad_sub_q10: 180,
+            stereo_width_q10: 1560,
+        }
+    }
+
+    pub const fn midnight_silk() -> Self {
+        Self {
+            sparkle_q10: 310,
+            warmth_q10: 520,
+            drive_q10: 160,
+            punch_q10: 380,
+            air_q10: 260,
+            phi_432_q10: 380,
+            goonj_velvet_q10: 260,
+            svara_formant_q10: 140,
+            naad_sub_q10: 240,
+            stereo_width_q10: 1280,
+        }
+    }
+
+    pub fn from_name(name: &str) -> Self {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "liquid_gold" | "gold" => Self::liquid_gold(),
+            "riva_cathedral" | "cathedral" | "riva" => Self::riva_cathedral(),
+            "midnight_silk" | "silk" | "midnight" => Self::midnight_silk(),
+            _ => Self::velvet_sanctuary(),
+        }
+    }
 }
+
+/// Babbage 3-Addition Cubic Forward-Difference Stepper for 8× (`48 kHz -> 384 kHz`)
+/// 24-bit (`-8388607..=8388607`) hardware output.
+///
+/// Evaluates the exact Catmull-Rom cubic polynomial `P(u)` at `u = k / 8` (`k = 0..8`)
+/// using 4 setup shifts/adds per input frame and **3 integer additions per 384 kHz sample**
+/// (`y += d1; d1 += d2; d2 += d3;`) — zero multiplications and zero divisions inside the
+/// inner high-rate loop.
+#[inline]
+pub fn step_babbage_cubic_8x_i32(p0: i32, p1: i32, p2: i32, p3: i32) -> [i32; 8] {
+    let s0 = p0 as i64;
+    let s1 = p1 as i64;
+    let s2 = p2 as i64;
+    let s3 = p3 as i64;
+
+    // 2 * P(t) = 2*p1 + (-p0 + p2)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t^2 + (-p0 + 3*p1 - 3*p2 + p3)*t^3
+    // At t = u / 8 (scaled by 2 * 8^3 = 1024):
+    let two_a = -s0 + 3 * s1 - 3 * s2 + s3;
+    let two_b = 2 * s0 - 5 * s1 + 4 * s2 - s3;
+    let two_c = -s0 + s2;
+
+    let mut y = s1 << 10;
+    let mut d1 = (two_c << 6) + (two_b << 3) + two_a;
+    let mut d2 = (two_b << 4) + 6 * two_a;
+    let d3 = 6 * two_a;
+
+    let mut out = [0i32; 8];
+    let mut k = 0;
+    while k < 8 {
+        out[k] = ((y + 512) >> 10).clamp(-8_388_607, 8_388_607) as i32;
+        y += d1;
+        d1 += d2;
+        d2 += d3;
+        k += 1;
+    }
+    out
+}
+
+/// Upsample interleaved stereo 16-bit PhoeniX PCM (`48 kHz`) by `factor` (`1`, `2`, `4`, or `8`)
+/// into packed 24-bit little-endian (`S24_3LE`, 3 bytes per sample) using the Babbage 3-Addition
+/// Cubic Forward-Difference Stepper.
+pub fn upsample_stereo_babbage_cubic_s24le(stereo_i16: &[i16], factor: usize) -> Vec<u8> {
+    let ratio = match factor {
+        8 => 8usize,
+        4 => 4usize,
+        2 => 2usize,
+        _ => 1usize,
+    };
+    let frames = stereo_i16.len() / 2;
+    let mut s24_bytes = Vec::with_capacity(frames * ratio * 6);
+    let step_stride = 8 / ratio;
+
+    for i in 0..frames {
+        let i0 = i.saturating_sub(1);
+        let i1 = i;
+        let i2 = (i + 1).min(frames.saturating_sub(1));
+        let i3 = (i + 2).min(frames.saturating_sub(1));
+
+        // Promote 16-bit PhoeniX output into 24-bit dynamic range (`<< 8`)
+        let l8 = step_babbage_cubic_8x_i32(
+            (stereo_i16[i0 * 2] as i32) << 8,
+            (stereo_i16[i1 * 2] as i32) << 8,
+            (stereo_i16[i2 * 2] as i32) << 8,
+            (stereo_i16[i3 * 2] as i32) << 8,
+        );
+        let r8 = step_babbage_cubic_8x_i32(
+            (stereo_i16[i0 * 2 + 1] as i32) << 8,
+            (stereo_i16[i1 * 2 + 1] as i32) << 8,
+            (stereo_i16[i2 * 2 + 1] as i32) << 8,
+            (stereo_i16[i3 * 2 + 1] as i32) << 8,
+        );
+
+        let mut k = 0;
+        while k < 8 {
+            let lb = l8[k].to_le_bytes();
+            let rb = r8[k].to_le_bytes();
+            s24_bytes.extend_from_slice(&[lb[0], lb[1], lb[2], rb[0], rb[1], rb[2]]);
+            k += step_stride;
+        }
+    }
+    s24_bytes
+}
+
+/// Encode packed 24-bit (`S24_3LE`) PCM bytes into a RIFF WAVE container (`bits_per_sample = 24`).
+pub fn encode_wav_s24le(s24le_pcm: &[u8], sample_rate_hz: u32, channels: u16) -> Vec<u8> {
+    let ch = channels.clamp(1, 2);
+    let data_bytes = s24le_pcm.len() as u32;
+    let riff_size = 36u32.saturating_add(data_bytes);
+    let block_align = ch * 3;
+    let byte_rate = sample_rate_hz * (block_align as u32);
+
+    let mut wav = Vec::with_capacity(44 + s24le_pcm.len());
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&riff_size.to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&ch.to_le_bytes());
+    wav.extend_from_slice(&sample_rate_hz.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&24u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_bytes.to_le_bytes());
+    wav.extend_from_slice(s24le_pcm);
+    wav
+}
+
+/// 8-tap mobile Goonj Balanced-Ternary `{-1, +1}` Dark Velvet Noise reflection table.
+pub const MOBILE_GOONJ_DVN_TAPS: [(usize, i64, i64); 8] = [
+    (173, 1, -1),
+    (463, -1, 1),
+    (859, 1, 1),
+    (1361, -1, -1),
+    (1879, 1, -1),
+    (2411, -1, 1),
+    (3229, 1, 1),
+    (3989, -1, 1),
+];
 
 /// Fast midpoint (`t = 8/16 = 1/2`) integer Catmull-Rom spline on the 768 kHz grid.
 #[inline]
@@ -143,6 +330,15 @@ pub fn transform_stereo_pcm_phoenix(
     let mut opcodes = Vec::with_capacity(512);
     let mut lp_l: i64 = 0;
     let mut lp_r: i64 = 0;
+    let mut svf_low_l: i64 = 0;
+    let mut svf_band_l: i64 = 0;
+    let mut svf_low_r: i64 = 0;
+    let mut svf_band_r: i64 = 0;
+    let mut dvn_buf_l = vec![0i16; 4096];
+    let mut dvn_buf_r = vec![0i16; 4096];
+    let mut dvn_idx: usize = 0;
+    let mut dvn_dark_l: i64 = 0;
+    let mut dvn_dark_r: i64 = 0;
     let mut phi_l: i64 = 0;
     let mut phi_r: i64 = 0;
 
@@ -170,6 +366,15 @@ pub fn transform_stereo_pcm_phoenix(
         lp_l = (lp_l * 7 + s_l) >> 3;
         lp_r = (lp_r * 7 + s_r) >> 3;
 
+        // Naad Chamberlin SVF for Svara Formant & Sub-Harmonic Body
+        let svf_high_l = s_l - svf_low_l - ((svf_band_l * 640) >> 10);
+        svf_band_l = (svf_band_l + ((svf_high_l * 180) >> 10)).clamp(-32767, 32767);
+        svf_low_l = (svf_low_l + ((svf_band_l * 180) >> 10)).clamp(-32767, 32767);
+
+        let svf_high_r = s_r - svf_low_r - ((svf_band_r * 640) >> 10);
+        svf_band_r = (svf_band_r + ((svf_high_r * 180) >> 10)).clamp(-32767, 32767);
+        svf_low_r = (svf_low_r + ((svf_band_r * 180) >> 10)).clamp(-32767, 32767);
+
         let arch_l = mid_768k_l - ((s_l + l2 as i64) >> 1);
         let arch_r = mid_768k_r - ((s_r + r2 as i64) >> 1);
 
@@ -189,8 +394,30 @@ pub fn transform_stereo_pcm_phoenix(
         let bloom_l = (phi_l * preset.phi_432_q10) >> 12;
         let bloom_r = (phi_r * preset.phi_432_q10) >> 12;
 
-        let raw_l = s_l + warmth_l + sparkle_l + drive_l + punch_l + air_l + bloom_l;
-        let raw_r = s_r + warmth_r + sparkle_r + drive_r + punch_r + air_r + bloom_r;
+        let svara_l = (svf_band_l * preset.svara_formant_q10) >> 13;
+        let svara_r = (svf_band_r * preset.svara_formant_q10) >> 13;
+        let naad_l = (svf_low_l * preset.naad_sub_q10) >> 13;
+        let naad_r = (svf_low_r * preset.naad_sub_q10) >> 13;
+
+        dvn_buf_l[dvn_idx] = l1;
+        dvn_buf_r[dvn_idx] = r1;
+        let mut dvn_acc_l: i64 = 0;
+        let mut dvn_acc_r: i64 = 0;
+        for &(tap_off, sign_l, sign_r) in &MOBILE_GOONJ_DVN_TAPS {
+            let r_idx = (dvn_idx + 4096 - tap_off) & 4095;
+            let tl = dvn_buf_l[r_idx] as i64;
+            let tr = dvn_buf_r[r_idx] as i64;
+            dvn_acc_l += if sign_l > 0 { tl } else { -tl };
+            dvn_acc_r += if sign_r > 0 { tr } else { -tr };
+        }
+        dvn_idx = (dvn_idx + 1) & 4095;
+        dvn_dark_l = (dvn_dark_l * 3 + (dvn_acc_l >> 2)) >> 2;
+        dvn_dark_r = (dvn_dark_r * 3 + (dvn_acc_r >> 2)) >> 2;
+        let goonj_l = (dvn_dark_l * preset.goonj_velvet_q10) >> 14;
+        let goonj_r = (dvn_dark_r * preset.goonj_velvet_q10) >> 14;
+
+        let raw_l = s_l + warmth_l + sparkle_l + drive_l + punch_l + air_l + bloom_l + svara_l + naad_l + goonj_l;
+        let raw_r = s_r + warmth_r + sparkle_r + drive_r + punch_r + air_r + bloom_r + svara_r + naad_r + goonj_r;
 
         let mid = (raw_l + raw_r) >> 1;
         let side = ((raw_l - raw_r) * preset.stereo_width_q10) >> 11;

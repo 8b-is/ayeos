@@ -160,20 +160,29 @@ pub fn synthesize_aarch64_mt6768_kernel_image() -> Vec<u8> {
 /// (with mode `0o100755` executable) and `/etc/ayeos.conf` so the Linux 6.6 GKI kernel
 /// boots directly into our static Rust binary as **PID 1**!
 pub fn build_cpio_newc_initramfs(init_binary: &[u8], config_text: &str) -> Vec<u8> {
-    let mut cpio = Vec::with_capacity(init_binary.len() + 4096);
-    append_cpio_newc_entry(&mut cpio, "init", 0o100_755, init_binary, 1);
-    append_cpio_newc_entry(&mut cpio, "etc", 0o040_755, &[], 2);
+    let mut cpio = Vec::with_capacity(init_binary.len() + 8192);
+    append_cpio_newc_entry(&mut cpio, "dev", 0o040_755, &[], 1);
+    append_cpio_newc_entry(&mut cpio, "proc", 0o040_755, &[], 2);
+    append_cpio_newc_entry(&mut cpio, "sys", 0o040_755, &[], 3);
+    append_cpio_newc_entry(&mut cpio, "tmp", 0o040_777, &[], 4);
+    append_cpio_newc_entry(&mut cpio, "run", 0o040_755, &[], 5);
+    append_cpio_newc_entry(&mut cpio, "etc", 0o040_755, &[], 6);
     append_cpio_newc_entry(
         &mut cpio,
         "etc/ayeos.conf",
         0o100_644,
         config_text.as_bytes(),
-        3,
+        7,
     );
-    append_cpio_newc_entry(&mut cpio, "system", 0o040_755, &[], 4);
-    append_cpio_newc_entry(&mut cpio, "system/bin", 0o040_755, &[], 5);
-    // Symlink `/system/bin/init -> /init` so both 1st-stage and 2nd-stage paths invoke ayeos-mobile!
-    append_cpio_newc_entry(&mut cpio, "system/bin/init", 0o120_777, b"/init", 6);
+    append_cpio_newc_entry(&mut cpio, "init", 0o100_755, init_binary, 8);
+    append_cpio_newc_entry(&mut cpio, "sbin", 0o040_755, &[], 9);
+    append_cpio_newc_entry(&mut cpio, "sbin/init", 0o120_777, b"/init", 10);
+    append_cpio_newc_entry(&mut cpio, "bin", 0o040_755, &[], 11);
+    append_cpio_newc_entry(&mut cpio, "bin/sh", 0o120_777, b"/init", 12);
+    append_cpio_newc_entry(&mut cpio, "system", 0o040_755, &[], 13);
+    append_cpio_newc_entry(&mut cpio, "system/bin", 0o040_755, &[], 14);
+    // Symlink `/system/bin/init -> /init` so both 1st-stage and 2nd-stage paths invoke ayeos!
+    append_cpio_newc_entry(&mut cpio, "system/bin/init", 0o120_777, b"/init", 15);
     append_cpio_newc_entry(&mut cpio, "TRAILER!!!", 0, &[], 0);
     // Pad total archive to 512-byte boundary
     while cpio.len() % 512 != 0 {

@@ -184,7 +184,7 @@ fn tone_play_live(
         };
         let dur_10ms = (cmd_index >> 8) as u32;
         let duration_us = if dur_10ms == 0 {
-            220_000
+            150_000
         } else {
             (dur_10ms * 10_000).clamp(20_000, 1_500_000)
         };
@@ -205,23 +205,62 @@ fn tone_play_live(
         return (2, 0);
     };
 
+    let mut current_key = steps[0].key_index;
     if studio_visible && steps.len() == 1 {
         let mut canvas = PhoneCanvas { base, stride };
         phone_studio::paint_tracker_rows(&mut canvas, glyph_8x16_hd, *active_row);
-        phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, steps[0].key_index);
-        flush_dcache_range(base, stride * SCREEN_H * 4);
+        phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, current_key);
+        flush_dcache_rows(base, stride, 730, 414);
     }
-    let r = tone::play_steps(&mut bus, steps, |idx, _step| {
-        pet_mediatek_watchdog();
-        let row = (base_row + idx) % tone::PATTERN.len();
-        *active_row = row;
-    });
+    let is_single_note = steps.len() == 1;
+    let r = tone::play_steps_with_ui(
+        &mut bus,
+        steps,
+        |idx, _step| {
+            pet_mediatek_watchdog();
+            let row = (base_row + idx) % tone::PATTERN.len();
+            *active_row = row;
+        },
+        |_elapsed| {
+            pet_mediatek_watchdog();
+            if !studio_visible || (safe_mmio_read32(0x1000_5200) & (1 << 1)) == 0 {
+                return tone::UiAction::Continue;
+            }
+            match gc7272_poll_touch(false) {
+                Some((tx, ty, true)) => {
+                    if let Some(semi) = phone_studio::key_at_point(tx, ty) {
+                        if is_single_note {
+                            if semi != current_key {
+                                current_key = semi;
+                                let mut canvas = PhoneCanvas { base, stride };
+                                phone_studio::paint_keyboard(
+                                    &mut canvas,
+                                    glyph_8x16_hd,
+                                    current_key,
+                                );
+                                flush_dcache_rows(base, stride, 1020, 124);
+                            }
+                            return tone::UiAction::ChangePitch(
+                                SEMITONE_HZ[(semi as usize).min(23)],
+                            );
+                        }
+                    } else if ty < 1000 || ty > 1160 {
+                        // Touch outside keyboard (e.g. Qwave Browser scroll/pinch/tab or Tracker):
+                        // immediately yield P1 Audio thread to P0 UI thread!
+                        return tone::UiAction::Preempt;
+                    }
+                    tone::UiAction::Continue
+                }
+                _ => tone::UiAction::Continue,
+            }
+        },
+    );
     if studio_visible && steps.len() > 1 {
         let last_key = steps[steps.len() - 1].key_index;
         let mut canvas = PhoneCanvas { base, stride };
         phone_studio::paint_tracker_rows(&mut canvas, glyph_8x16_hd, *active_row);
         phone_studio::paint_keyboard(&mut canvas, glyph_8x16_hd, last_key);
-        flush_dcache_range(base, stride * SCREEN_H * 4);
+        flush_dcache_rows(base, stride, 730, 414);
     }
     (r.outcome, r.off)
 }
@@ -235,7 +274,9 @@ fn tone_debug_exec(
     active_row: &mut usize,
     qwave_scroll: &mut usize,
     qwave_tab: &mut usize,
+    qwave_zoom: &mut usize,
     qwave_full_mode: &mut bool,
+    bat_mv: u16,
     studio_visible: bool,
     tone_gate: bool,
 ) {
@@ -485,7 +526,9 @@ fn tone_debug_exec(
                     active_row,
                     qwave_scroll,
                     qwave_tab,
+                    qwave_zoom,
                     qwave_full_mode,
+                    bat_mv,
                     studio_visible,
                     tone_gate,
                 );
@@ -521,7 +564,7 @@ fn tone_debug_exec(
                                 glyph_8x16_hd,
                                 div_to_key_index(div),
                             );
-                            flush_dcache_range(base, stride * SCREEN_H * 4);
+                            flush_dcache_rows(base, stride, 1020, 124);
                         }
                     }
                     Err(e) => {
@@ -564,12 +607,15 @@ fn tone_debug_exec(
                 if studio_visible {
                     let mut canvas = PhoneCanvas { base, stride };
                     if *qwave_full_mode {
-                        phone_studio::paint_qwave_top_viewport(
+                        phone_studio::paint_qwave_top_viewport_zoom(
                             &mut canvas,
                             glyph_8x16_hd,
                             *qwave_scroll,
                             *qwave_tab,
+                            *qwave_zoom,
+                            bat_mv,
                         );
+                        flush_dcache_rows(base, stride, 64, 598);
                     }
                     phone_studio::paint_qwave_browser(
                         &mut canvas,
@@ -577,7 +623,7 @@ fn tone_debug_exec(
                         *qwave_scroll,
                         *qwave_tab,
                     );
-                    flush_dcache_range(base, stride * SCREEN_H * 4);
+                    flush_dcache_rows(base, stride, 1176, 152);
                 }
                 control.dbg_status = 1;
                 control.dbg_result = ((*qwave_tab as u32) << 8) | (*qwave_scroll as u32);
@@ -771,6 +817,40 @@ fn tone_debug_exec(
     }
 }
 
+/// Non-blocking live battery voltage read from `MT6358 AUXADC CH0 (BATADC)` via `tone_bus::Hardware`:
+/// Triggers `AUXADC_RQST0` (`0x1108 = 0x0001`), polls `AUXADC_ADC0` (`0x1088`) up to 32 times
+/// for `RDY` (bit 15 = 1), restores the PMIC bus cleanly, and converts via `(adc * 5400) / 32768` mV.
+fn read_mt6358_battery_mv() -> u16 {
+    use tone::Bus;
+    let Ok(mut bus) = tone_bus::Hardware::prepare(UsbIo {
+        start_faults: fault_count(),
+    }) else {
+        return 3700;
+    };
+    let _ = bus.pmic_write(0x1108, 0x0001);
+    let mut raw = 0u16;
+    for _ in 0..32 {
+        if let Ok(v) = bus.pmic_read(0x1088) {
+            if (v & 0x8000) != 0 {
+                raw = v & 0x7fff;
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    if raw == 0 {
+        raw = bus.pmic_read(0x1088).unwrap_or(0) & 0x7fff;
+    }
+    let _ = bus.restore();
+    let mv = (((raw as u32) * 5400) >> 15) as u16;
+    if (2800..=4450).contains(&mv) {
+        mv
+    } else {
+        3700
+    }
+}
+
 fn tone_dispatch_touch_point(
     control: &mut usb_control::Control<'_>,
     x: u16,
@@ -780,7 +860,9 @@ fn tone_dispatch_touch_point(
     active_row: &mut usize,
     qwave_scroll: &mut usize,
     qwave_tab: &mut usize,
+    qwave_zoom: &mut usize,
     qwave_full_mode: &mut bool,
+    bat_mv: u16,
     studio_visible: bool,
     tone_gate: bool,
 ) -> u32 {
@@ -821,21 +903,42 @@ fn tone_dispatch_touch_point(
         control.tracker_last_off = off;
         control.tracker_active_row = *active_row as u8;
         (0x0200 | (row as u32)) | (outcome << 16)
+    } else if let Some(zdelta) = phone_studio::zoom_delta_at_point(x, y) {
+        if zdelta < 0 {
+            *qwave_zoom = qwave_zoom.saturating_sub(1);
+        } else {
+            *qwave_zoom = (*qwave_zoom + 1).min(2);
+        }
+        if studio_visible && *qwave_full_mode {
+            let mut canvas = PhoneCanvas { base, stride };
+            phone_studio::paint_qwave_doc_only(
+                &mut canvas,
+                glyph_8x16_hd,
+                *qwave_scroll,
+                *qwave_tab,
+                *qwave_zoom,
+                bat_mv,
+            );
+            flush_dcache_rows(base, stride, 68, 592);
+        }
+        0x0600 | (*qwave_zoom as u32)
     } else if phone_studio::mode_toggle_at_point(x, y) {
         *qwave_full_mode = !*qwave_full_mode;
         if studio_visible {
             let mut canvas = PhoneCanvas { base, stride };
             if *qwave_full_mode {
-                phone_studio::paint_qwave_top_viewport(
+                phone_studio::paint_qwave_top_viewport_zoom(
                     &mut canvas,
                     glyph_8x16_hd,
                     *qwave_scroll,
                     *qwave_tab,
+                    *qwave_zoom,
+                    bat_mv,
                 );
             } else {
                 phone_studio::paint_studio_top_viewport(&mut canvas, glyph_8x16_hd);
             }
-            flush_dcache_range(base, stride * SCREEN_H * 4);
+            flush_dcache_rows(base, stride, 64, 598);
         }
         0x0500 | (*qwave_full_mode as u32)
     } else if let Some(tab) = phone_studio::tab_at_point(x, y) {
@@ -844,12 +947,15 @@ fn tone_dispatch_touch_point(
         if studio_visible {
             let mut canvas = PhoneCanvas { base, stride };
             if *qwave_full_mode {
-                phone_studio::paint_qwave_top_viewport(
+                phone_studio::paint_qwave_top_viewport_zoom(
                     &mut canvas,
                     glyph_8x16_hd,
                     *qwave_scroll,
                     *qwave_tab,
+                    *qwave_zoom,
+                    bat_mv,
                 );
+                flush_dcache_rows(base, stride, 64, 598);
             }
             phone_studio::paint_qwave_browser(
                 &mut canvas,
@@ -857,7 +963,7 @@ fn tone_dispatch_touch_point(
                 *qwave_scroll,
                 *qwave_tab,
             );
-            flush_dcache_range(base, stride * SCREEN_H * 4);
+            flush_dcache_rows(base, stride, 1176, 152);
         }
         0x0300 | (tab as u32)
     } else if let Some(delta) = phone_studio::scroll_at_point(x, y) {
@@ -869,12 +975,15 @@ fn tone_dispatch_touch_point(
         if studio_visible {
             let mut canvas = PhoneCanvas { base, stride };
             if *qwave_full_mode {
-                phone_studio::paint_qwave_top_viewport(
+                phone_studio::paint_qwave_doc_only(
                     &mut canvas,
                     glyph_8x16_hd,
                     *qwave_scroll,
                     *qwave_tab,
+                    *qwave_zoom,
+                    bat_mv,
                 );
+                flush_dcache_rows(base, stride, 68, 592);
             }
             phone_studio::paint_qwave_browser(
                 &mut canvas,
@@ -882,7 +991,7 @@ fn tone_dispatch_touch_point(
                 *qwave_scroll,
                 *qwave_tab,
             );
-            flush_dcache_range(base, stride * SCREEN_H * 4);
+            flush_dcache_rows(base, stride, 1176, 152);
         }
         0x0400 | (*qwave_scroll as u32)
     } else {
@@ -1325,16 +1434,27 @@ fn gc7272_hostdownload_reset_b1() -> u32 {
     status
 }
 
-fn gc7272_poll_touch(force_read: bool) -> Option<(u16, u16, bool)> {
+#[derive(Clone, Copy)]
+struct Gc7272MultiTouch {
+    count: u8,
+    x0: u16,
+    y0: u16,
+    x1: u16,
+    y1: u16,
+}
+
+fn gc7272_poll_touch_multi(force_read: bool) -> Option<Gc7272MultiTouch> {
     let irq_high = (safe_mmio_read32(0x1000_5200) >> 1) & 1 != 0;
     if !irq_high && !force_read {
         return None;
     }
     let mut pkt = [0u8; 65];
     gc7272_spi_read(&mut pkt);
+    let is_wdt = pkt[2..6] == [0x72, 0x02, 0x00, 0x01]
+        || pkt[1..5] == [0x72, 0x02, 0x00, 0x01];
     if pkt[0..8] != [0u8; 8]
         && pkt[0..8] != [0xff; 8]
-        && pkt[0..8] != [0xff, 0xff, 0x72, 0x02, 0x00, 0x01, 0xff, 0xff]
+        && !is_wdt
         && !(pkt[0] == 0xb1 && pkt[1..64].iter().all(|&b| b == 0))
     {
         unsafe {
@@ -1347,8 +1467,6 @@ fn gc7272_poll_touch(force_read: bool) -> Option<(u16, u16, bool)> {
         unsafe {
             let cd = read_volatile(core::ptr::addr_of!(GC7272_B1_COOLDOWN));
             if cd == 0 {
-                // Run clean 1-byte 0xB1 read + 65,536-byte DMA hostdownload so the
-                // 64 trailing bytes of the 65-byte poll read don't shift the FW stream.
                 let _ = gc7272_hostdownload_reset_b1();
                 write_volatile(core::ptr::addr_of_mut!(GC7272_B1_COOLDOWN), 512);
             } else {
@@ -1357,31 +1475,66 @@ fn gc7272_poll_touch(force_read: bool) -> Option<(u16, u16, bool)> {
         }
         return None;
     }
-    if pkt[0..8] == [0u8; 8]
-        || pkt[0..8] == [0xff; 8]
-        || pkt[0..8] == [0xff, 0xff, 0x72, 0x02, 0x00, 0x01, 0xff, 0xff]
-    {
+    if pkt[0..8] == [0u8; 8] || pkt[0..8] == [0xff; 8] || is_wdt {
         return None;
     }
-    for slot in 0..10usize {
+    let mut count = 0u8;
+    let mut x0 = 0u16;
+    let mut y0 = 0u16;
+    let mut x1 = 0u16;
+    let mut y1 = 0u16;
+    for slot in 0..5usize {
         let off = slot * 6;
         let b0 = pkt[off];
         if b0 != 0 && b0 != 0xff && b0 <= 0x57 {
             let raw_x = ((pkt[off + 1] as u16) << 4) | ((pkt[off + 3] as u16) >> 4);
             let raw_y = ((pkt[off + 2] as u16) << 4) | ((pkt[off + 3] as u16) & 0x0f);
             if raw_x < 720 && raw_y < 1640 && (raw_x != 0 || raw_y != 0) {
-                return Some((raw_x, raw_y, true));
+                if count == 0 {
+                    x0 = raw_x;
+                    y0 = raw_y;
+                    count = 1;
+                } else if count == 1 {
+                    x1 = raw_x;
+                    y1 = raw_y;
+                    count = 2;
+                    break;
+                }
             }
         }
     }
+    if count > 0 {
+        return Some(Gc7272MultiTouch { count, x0, y0, x1, y1 });
+    }
     if (pkt[0] & 0x80) != 0 {
-        return Some((0, 0, false));
+        return Some(Gc7272MultiTouch {
+            count: 0,
+            x0: 0,
+            y0: 0,
+            x1: 0,
+            y1: 0,
+        });
     }
     let sum = pkt[0..64].iter().fold(0u8, |acc, &b| acc.wrapping_add(b));
     if pkt[64] != sum.wrapping_neg() {
         return None;
     }
-    Some((0, 0, false))
+    Some(Gc7272MultiTouch {
+        count: 0,
+        x0: 0,
+        y0: 0,
+        x1: 0,
+        y1: 0,
+    })
+}
+
+fn gc7272_poll_touch(force_read: bool) -> Option<(u16, u16, bool)> {
+    let mt = gc7272_poll_touch_multi(force_read)?;
+    if mt.count > 0 {
+        Some((mt.x0, mt.y0, true))
+    } else {
+        Some((0, 0, false))
+    }
 }
 
 fn tone_fatal_cleanup() {

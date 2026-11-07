@@ -5,7 +5,7 @@
 pub const WIDTH: usize = 720;
 pub const HEIGHT: usize = 1640;
 pub(crate) const INK: u32 = 0xFF05_060A;
-const PANEL: u32 = 0xFF10_151D;
+pub(crate) const PANEL: u32 = 0xFF10_151D;
 pub(crate) const LINE: u32 = 0xFF26_303C;
 pub(crate) const WHITE: u32 = 0xFFEF_F5F4;
 pub(crate) const MUTED: u32 = 0xFFA3_B2C2;
@@ -15,29 +15,43 @@ const VIOLET: u32 = 0xFFB4_8BFF;
 
 pub trait Canvas {
     fn pixel(&mut self, x: usize, y: usize, color: u32);
+    fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32) {
+        for py in y..y.saturating_add(h).min(HEIGHT) {
+            for px in x..x.saturating_add(w).min(WIDTH) {
+                self.pixel(px, py, color);
+            }
+        }
+    }
 }
 
 pub(crate) type Glyph = fn(u8) -> [u8; 16];
 
+#[inline(always)]
+pub(crate) const fn blend_half(c1: u32, c2: u32) -> u32 {
+    0xFF00_0000 | (((c1 & 0x00FE_FEFE) >> 1) + ((c2 & 0x00FE_FEFE) >> 1))
+}
+
+#[inline(always)]
 pub(crate) fn rect(c: &mut impl Canvas, x: usize, y: usize, w: usize, h: usize, color: u32) {
-    for py in y..y.saturating_add(h).min(HEIGHT) {
-        for px in x..x.saturating_add(w).min(WIDTH) {
-            c.pixel(px, py, color);
-        }
-    }
+    c.fill_rect(x, y, w, h, color);
 }
 
 pub(crate) fn panel(c: &mut impl Canvas, y: usize, h: usize) {
-    // 16px rounded corners using integer circle coverage.
-    for py in 0..h {
-        for px in 0..648usize {
-            let dx = 16usize.saturating_sub(px.min(647 - px));
-            let dy = 16usize.saturating_sub(py.min(h - 1 - py));
-            if dx * dx + dy * dy <= 256 {
-                c.pixel(36 + px, y + py, PANEL);
-            }
-        }
+    if h <= 32 {
+        c.fill_rect(36, y, 648, h, PANEL);
+        return;
     }
+    // Fast scanline span fill for 16px rounded corners + single bulk fill for interior
+    const CORNER_INSET: [usize; 16] = [16, 11, 8, 6, 5, 4, 3, 2, 2, 1, 1, 1, 0, 0, 0, 0];
+    for ry in 0..16usize {
+        let inset = CORNER_INSET[ry];
+        c.fill_rect(36 + inset, y + ry, 648 - 2 * inset, 1, PANEL);
+        c.fill_rect(36 + inset, y + h - 1 - ry, 648 - 2 * inset, 1, PANEL);
+    }
+    c.fill_rect(36, y + 16, 648, h - 32, PANEL);
+    // Crisp 1px top/bottom HD highlight border
+    c.fill_rect(52, y, 616, 1, LINE);
+    c.fill_rect(52, y + h - 1, 616, 1, LINE);
 }
 
 pub(crate) fn text(
@@ -49,18 +63,106 @@ pub(crate) fn text(
     s: &str,
     color: u32,
 ) {
+    let aa_col = blend_half(color, PANEL);
     for (i, ch) in s.bytes().enumerate() {
-        for (row, bits) in font(ch).iter().enumerate() {
-            for col in 0..8 {
-                if bits & (0x80 >> col) != 0 {
-                    rect(
-                        c,
-                        x + (i * 9 + col) * scale,
-                        y + row * scale,
-                        scale,
-                        scale,
-                        color,
-                    );
+        let rows = font(ch);
+        let gx = x + i * 9 * scale;
+        if gx >= WIDTH {
+            break;
+        }
+        for (row, &bits) in rows.iter().enumerate() {
+            let up = if row > 0 { rows[row - 1] } else { 0 };
+            let dn = if row < 15 { rows[row + 1] } else { 0 };
+            if bits == 0 && up == 0 && dn == 0 {
+                continue;
+            }
+            for col in 0..8usize {
+                let mask = 0x80u8 >> col;
+                if bits & mask != 0 {
+                    c.fill_rect(gx + col * scale, y + row * scale, scale, scale, color);
+                } else if scale >= 2 {
+                    let l_on = col > 0 && (bits & (mask << 1)) != 0;
+                    let r_on = col < 7 && (bits & (mask >> 1)) != 0;
+                    let u_on = (up & mask) != 0;
+                    let d_on = (dn & mask) != 0;
+                    if l_on && u_on {
+                        c.pixel(gx + col * scale, y + row * scale, aa_col);
+                    }
+                    if r_on && u_on {
+                        c.pixel(gx + col * scale + scale - 1, y + row * scale, aa_col);
+                    }
+                    if l_on && d_on {
+                        c.pixel(gx + col * scale, y + row * scale + scale - 1, aa_col);
+                    }
+                    if r_on && d_on {
+                        c.pixel(
+                            gx + col * scale + scale - 1,
+                            y + row * scale + scale - 1,
+                            aa_col,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// High-resolution Pinch-Zoomable text renderer with sub-pixel corner anti-aliasing:
+/// - `zoom == 0` (100%): 8x16 crisp HD glyphs (9px advance, 16px tall)
+/// - `zoom == 1` (150%): 12x24 3:2 sub-pixel interpolated HD glyphs (13px advance, 24px tall)
+/// - `zoom >= 2` (200%): 16x32 2x2 sub-pixel corner-smoothed HD glyphs (18px advance, 32px tall)
+pub(crate) fn text_zoom(
+    c: &mut impl Canvas,
+    font: Glyph,
+    x: usize,
+    y: usize,
+    zoom: usize,
+    s: &str,
+    color: u32,
+) {
+    if zoom == 0 {
+        text(c, font, x, y, 1, s, color);
+        return;
+    }
+    if zoom >= 2 {
+        text(c, font, x, y, 2, s, color);
+        return;
+    }
+    // zoom == 1 (150% HD: 12x24 sub-pixel interpolated from 8x16)
+    let aa_col = blend_half(color, PANEL);
+    // Horizontal 8 -> 12 mapping: columns 0, 2, 4, 6 are 1px; columns 1, 3, 5, 7 are 2px (total 12px + 2px spacing = 14px)
+    const COL_X: [usize; 8] = [0, 1, 3, 4, 6, 7, 9, 10];
+    const COL_W: [usize; 8] = [1, 2, 1, 2, 1, 2, 1, 2];
+    const ROW_Y: [usize; 16] = [0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22];
+    const ROW_H: [usize; 16] = [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2];
+    for (i, ch) in s.bytes().enumerate() {
+        let gx = x + i * 14;
+        if gx + 12 >= WIDTH {
+            break;
+        }
+        let rows = font(ch);
+        for (row, &bits) in rows.iter().enumerate() {
+            let up = if row > 0 { rows[row - 1] } else { 0 };
+            let dn = if row < 15 { rows[row + 1] } else { 0 };
+            if bits == 0 && up == 0 && dn == 0 {
+                continue;
+            }
+            let py = y + ROW_Y[row];
+            let ph = ROW_H[row];
+            for col in 0..8usize {
+                let mask = 0x80u8 >> col;
+                let px = gx + COL_X[col];
+                let pw = COL_W[col];
+                if bits & mask != 0 {
+                    c.fill_rect(px, py, pw, ph, color);
+                } else {
+                    let l_on = col > 0 && (bits & (mask << 1)) != 0;
+                    let r_on = col < 7 && (bits & (mask >> 1)) != 0;
+                    let u_on = (up & mask) != 0;
+                    let d_on = (dn & mask) != 0;
+                    if (l_on || r_on) && (u_on || d_on) {
+                        c.pixel(px, py, aa_col);
+                    }
                 }
             }
         }

@@ -1,0 +1,16 @@
+[package]
+name = "ayeos-baremetal-x86_64"
+version = "1.0.0"
+edition = "2021"
+description = "100% Bare-Metal #![no_std] #![no_main] Pure-Rust x86_64 PXE OS Kernel (Limine Protocol) for AyeOS x OxiCast x PhoeniX TV Sanctuary — Zero Linux, Zero C, Zero Floats."
+
+[dependencies]
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

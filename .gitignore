@@ -6,3 +6,8 @@ __pycache__/
 baremetal/target/
 target/
 
+
+# Local sync patch and Smart Tree metadata
+*-dirty.patch
+.st/
+**/.st/

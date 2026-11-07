@@ -1,10 +1,14 @@
 pub mod boot_mt6768;
+pub mod desktop;
 pub mod genesis;
 pub mod memnet;
+pub mod memnet_fabric;
 pub mod mt6631;
+pub mod oxicast;
 pub mod phoenix_audio;
 pub mod prng;
 pub mod quant;
+pub mod uefi_bootloader;
 
 pub use genesis::{
     cap_mask, derive_learning_genesis, encode_memnet_frame, verify_memnet_frame, CapabilityTicket,

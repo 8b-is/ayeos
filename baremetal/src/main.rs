@@ -134,8 +134,22 @@ fn report_board(address: u64) {
 }
 
 impl dashboard::Canvas for PhoneCanvas {
+    #[inline(always)]
     fn pixel(&mut self, x: usize, y: usize, color: u32) {
         put_pixel(self.base, self.stride, x, y, color);
+    }
+    #[inline(always)]
+    fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: u32) {
+        fill_rect(self.base, self.stride, x, y, w, h, color);
+    }
+}
+
+#[inline(always)]
+fn flush_dcache_rows(base: usize, stride: usize, y_start: usize, h: usize) {
+    let y0 = y_start.min(SCREEN_H);
+    let y1 = y0.saturating_add(h).min(SCREEN_H);
+    if y1 > y0 {
+        flush_dcache_range(base + y0 * stride * 4, (y1 - y0) * stride * 4);
     }
 }
 

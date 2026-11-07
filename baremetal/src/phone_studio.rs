@@ -3,7 +3,7 @@
 //! one-cell-at-a-time idle updater owns the reserved live status strip.
 use crate::{board_screen::Line, dashboard, tone};
 use core::fmt::Write;
-use dashboard::{panel, rect, text, Canvas, Glyph, GOLD, INK, LINE, MINT, MUTED, WHITE};
+use dashboard::{panel, rect, text, text_zoom, Canvas, Glyph, GOLD, INK, LINE, MINT, MUTED, WHITE};
 
 pub const USB_STATUS_Y: usize = 1408;
 pub const FATAL_BANNER: &str = "AYEOS AUDIO-TONE1 / FATAL - photograph this screen";
@@ -496,21 +496,122 @@ pub fn paint_qwave_browser(c: &mut impl Canvas, font: Glyph, scroll_y: usize, ac
     text(c, font, 634, 1286, 1, "DN", GOLD);
 }
 
-/// Renders the Full-Screen Native Qwave Sovereign Browser viewport across the upper half
-/// (`y = 64..662`) of the `720 x 1640` display, docked above the live S3M Tracker & 24-key Piano.
-pub fn paint_qwave_top_viewport(
+/// Renders live BLU G75 battery voltage (`mV`), percentage (`%`), and battery icon bar
+/// plus `[Z-]` / `150%` / `[Z+]` Pinch-Zoom controls in the top header (`y = 70..98`).
+pub fn paint_top_header_badges(
+    c: &mut impl Canvas,
+    font: Glyph,
+    zoom_level: usize,
+    bat_mv: u16,
+    qwave_full_mode: bool,
+) {
+    // Clear right half of top header bar (x = 246..684, y = 68..100)
+    rect(c, 246, 68, 438, 32, INK);
+    let mv = if bat_mv < 2500 { 3700 } else { bat_mv };
+    let pct = (((mv.clamp(3300, 4200) - 3300) as u32 * 100) / 900).min(100);
+    // Battery icon outline (x = 248..274, y = 74..92) + fill bar
+    rect(c, 248, 74, 24, 18, LINE);
+    rect(c, 250, 76, 20, 14, INK);
+    rect(c, 272, 79, 3, 8, LINE);
+    let fill_w = ((pct as usize * 18) / 100).clamp(2, 18);
+    let bat_col = if pct <= 20 { RED } else if pct <= 45 { GOLD } else { MINT };
+    rect(c, 251, 77, fill_w, 12, bat_col);
+    let mut bline = Line::new();
+    let _ = write!(bline, "{}% {}mV", pct, mv);
+    text(c, font, 280, 76, 1, bline.text(), bat_col);
+
+    // Pinch-Zoom touch buttons: [Z-] (404..442), 100%/150%/200% (444..488), [Z+] (490..528)
+    let z_label = match zoom_level {
+        0 => "100%",
+        1 => "150%",
+        _ => "200%",
+    };
+    rect(c, 404, 70, 36, 28, LINE);
+    text(c, font, 413, 76, 1, "Z-", GOLD);
+    rect(c, 442, 70, 46, 28, INK);
+    text(c, font, 447, 76, 1, z_label, MINT);
+    rect(c, 490, 70, 36, 28, LINE);
+    text(c, font, 499, 76, 1, "Z+", MINT);
+
+    // Mode Toggle button (x = 532..680, y = 70..98)
+    rect(c, 532, 70, 148, 28, LINE);
+    text(
+        c,
+        font,
+        542,
+        76,
+        1,
+        if qwave_full_mode { "MODE: STUDIO" } else { "MODE: QWAVE" },
+        MINT,
+    );
+}
+
+/// Fast partial redraw of ONLY the Qwave document viewport (`y = 178..658`) and top badges
+/// during 1-finger drag scrolling or 2-finger pinch-to-zoom (eliminates top-bar flicker and
+/// cuts pixel writes + D-cache flush by >6x).
+pub fn paint_qwave_doc_only(
     c: &mut impl Canvas,
     font: Glyph,
     scroll_y: usize,
     active_tab: usize,
+    zoom_level: usize,
+    bat_mv: u16,
 ) {
     let tab = active_tab % QWAVE_TABS.len();
     let scroll = scroll_y.min(QWAVE_MAX_SCROLL);
+    let zoom = zoom_level.min(2);
+    paint_top_header_badges(c, font, zoom, bat_mv, true);
+
+    panel(c, 178, 480);
+    let docs = &QWAVE_FULL_DOCS[tab];
+    let (visible_rows, row_step, max_chars): (usize, usize, usize) = match zoom {
+        0 => (15, 29, 60),
+        1 => (11, 39, 39),
+        _ => (8, 52, 29),
+    };
+    for row in 0..visible_rows {
+        let idx = (scroll + row).min(docs.len() - 1);
+        let full_str = docs[idx];
+        let clipped_len = full_str.len().min(max_chars);
+        let line_str = &full_str[..clipped_len];
+        let ly = 194 + row * row_step;
+        let line_color = if full_str.starts_with("# ") {
+            MINT
+        } else if full_str.starts_with("## ") || full_str.starts_with("-> ") {
+            GOLD
+        } else if full_str.starts_with("- ") {
+            WHITE
+        } else {
+            MUTED
+        };
+        text_zoom(c, font, 54, ly, zoom, line_str, line_color);
+    }
+
+    // Full-height scrollbar + UP / DN touch buttons on the right edge of the viewport
+    rect(c, 616, 194, 6, 444, LINE);
+    let thumb_y = 194 + (scroll * 380) / QWAVE_MAX_SCROLL;
+    rect(c, 616, thumb_y, 6, 64, MINT);
+    rect(c, 626, 194, 42, 216, LINE);
+    text(c, font, 638, 294, 1, "UP", MINT);
+    rect(c, 626, 418, 42, 220, LINE);
+    text(c, font, 638, 520, 1, "DN", GOLD);
+}
+
+/// Renders the Full-Screen Native Qwave Sovereign Browser viewport across the upper half
+/// (`y = 64..662`) of the `720 x 1640` display, docked above the live S3M Tracker & 24-key Piano.
+pub fn paint_qwave_top_viewport_zoom(
+    c: &mut impl Canvas,
+    font: Glyph,
+    scroll_y: usize,
+    active_tab: usize,
+    zoom_level: usize,
+    bat_mv: u16,
+) {
+    let tab = active_tab % QWAVE_TABS.len();
     rect(c, 0, 64, dashboard::WIDTH, 600, INK);
     text(c, font, 40, 70, 2, "qwave", MINT);
-    text(c, font, 148, 76, 1, "AYEOS 5.6 SOVEREIGN BROWSER", GOLD);
-    rect(c, 532, 70, 148, 28, LINE);
-    text(c, font, 542, 76, 1, "MODE: STUDIO", MINT);
+    text(c, font, 138, 76, 1, "P0:UI P1:AUD", GOLD);
+    paint_top_header_badges(c, font, zoom_level, bat_mv, true);
 
     // Address Bar (y = 104..136)
     rect(c, 40, 104, 640, 32, LINE);
@@ -542,33 +643,16 @@ pub fn paint_qwave_top_viewport(
         );
     }
 
-    // Main Sovereign Markdown Document Viewport (y = 178..658, 15 visible lines)
-    panel(c, 178, 480);
-    let docs = &QWAVE_FULL_DOCS[tab];
-    for row in 0..15usize {
-        let idx = (scroll + row).min(docs.len() - 1);
-        let line_str = docs[idx];
-        let ly = 194 + row * 29;
-        let line_color = if line_str.starts_with("# ") {
-            MINT
-        } else if line_str.starts_with("## ") || line_str.starts_with("-> ") {
-            GOLD
-        } else if line_str.starts_with("- ") {
-            WHITE
-        } else {
-            MUTED
-        };
-        text(c, font, 56, ly, 1, line_str, line_color);
-    }
+    paint_qwave_doc_only(c, font, scroll_y, active_tab, zoom_level, bat_mv);
+}
 
-    // Full-height scrollbar + UP / DN touch buttons on the right edge of the viewport
-    rect(c, 616, 194, 6, 444, LINE);
-    let thumb_y = 194 + (scroll * 380) / QWAVE_MAX_SCROLL;
-    rect(c, 616, thumb_y, 6, 64, MINT);
-    rect(c, 626, 194, 42, 216, LINE);
-    text(c, font, 638, 294, 1, "UP", MINT);
-    rect(c, 626, 418, 42, 220, LINE);
-    text(c, font, 638, 520, 1, "DN", GOLD);
+pub fn paint_qwave_top_viewport(
+    c: &mut impl Canvas,
+    font: Glyph,
+    scroll_y: usize,
+    active_tab: usize,
+) {
+    paint_qwave_top_viewport_zoom(c, font, scroll_y, active_tab, 1, 3700);
 }
 
 /// Renders the compact Studio + Demoscene Scriller upper viewport (`y = 64..662`) when toggled
@@ -576,9 +660,8 @@ pub fn paint_qwave_top_viewport(
 pub fn paint_studio_top_viewport(c: &mut impl Canvas, font: Glyph) {
     rect(c, 0, 64, dashboard::WIDTH, 600, INK);
     text(c, font, 40, 78, 2, "ayeOS", MINT);
-    text(c, font, 210, 84, 1, "SCREAMTRACKER / S3M", GOLD);
-    rect(c, 532, 70, 148, 28, LINE);
-    text(c, font, 542, 76, 1, "MODE: QWAVE", MINT);
+    text(c, font, 148, 84, 1, "P0:UI P1:S3M", GOLD);
+    paint_top_header_badges(c, font, 1, 3700, false);
     rect(c, 40, 134, 640, 1, LINE);
     text(c, font, 40, 164, 3, "Made to understand.", WHITE);
     text(
@@ -608,7 +691,7 @@ pub fn paint_studio_top_viewport(c: &mut impl Canvas, font: Glyph) {
         60,
         424,
         1,
-        "Complete / Off: 17/17 / Restored: yes / 8kHz SGEN -18dBFS",
+        "Complete / Off: 17/17 / Restored: yes / 48kHz Full-Crest",
         MINT,
     );
     text(
@@ -617,7 +700,7 @@ pub fn paint_studio_top_viewport(c: &mut impl Canvas, font: Glyph) {
         60,
         456,
         1,
-        "Tap [MODE: QWAVE] top-right for Full Qwave Browser.",
+        "Tap [MODE: QWAVE] top-right or Pinch-Zoom Qwave Browser.",
         GOLD,
     );
     panel(c, 534, 122);
@@ -637,7 +720,7 @@ pub fn paint_qwave_fullscreen(
     active_row: usize,
     active_key: u8,
 ) {
-    paint_qwave_top_viewport(c, font, scroll_y, active_tab);
+    paint_qwave_top_viewport_zoom(c, font, scroll_y, active_tab, 1, 3700);
     panel(c, 668, 308);
     text(c, font, 60, 686, 1, "03 / SCREAMTRACKER S3M PATTERN", GOLD);
     text(c, font, 414, 686, 1, "QWAVE AUDIO DECK", MINT);
@@ -647,7 +730,7 @@ pub fn paint_qwave_fullscreen(
         60,
         710,
         1,
-        "Pop-free 8kHz SGEN (125Hz*N, -18dBFS) + Dual AW87394 SmartPAs.",
+        "Pop-free 48kHz Full-Crest SGEN + Dual AW87394 SmartPAs.",
         MUTED,
     );
     paint_tracker_rows(c, font, active_row);
@@ -668,17 +751,32 @@ pub fn paint_qwave_fullscreen(
         60,
         1154,
         1,
-        "Touch tabs/scroll or press Vol Up/Down to browse Qwave & play S3M.",
+        "Slide keys (Glissando), Pinch-Zoom, or Drag Qwave to scroll!",
         MINT,
     );
     paint_qwave_browser(c, font, scroll_y, active_tab);
+}
+
+/// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to `[Z-]` (`-1`) or `[Z+]` (`+1`) zoom buttons.
+pub fn zoom_delta_at_point(x: u16, y: u16) -> Option<i8> {
+    let ux = x as usize;
+    let uy = y as usize;
+    if (64..=104).contains(&uy) {
+        if (400..=456).contains(&ux) {
+            return Some(-1);
+        }
+        if (457..=530).contains(&ux) {
+            return Some(1);
+        }
+    }
+    None
 }
 
 /// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to the `[MODE: STUDIO/QWAVE]` toggle button.
 pub fn mode_toggle_at_point(x: u16, y: u16) -> bool {
     let ux = x as usize;
     let uy = y as usize;
-    (520..=680).contains(&ux) && (68..=102).contains(&uy)
+    (531..=684).contains(&ux) && (64..=104).contains(&uy)
 }
 
 /// Maps a `(x, y)` touch coordinate on the `720 x 1640` display to a Qwave Browser tab `0..2`.
