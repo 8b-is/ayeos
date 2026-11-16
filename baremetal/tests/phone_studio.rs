@@ -326,3 +326,23 @@ fn touch_keyboard_and_tracker_rows_map_every_semitone_and_row() {
     }
     phone_studio::paint_studio_top_viewport(&mut Bounds, solid);
 }
+
+#[test]
+fn blu_g75_g8t_snap_circuit_v1_and_v2_are_bit_identical_and_preserve_off17_mask() {
+    for x in [0u64, 66, 200, 270, 360, 520, 719, 999] {
+        for y in [0u64, 53, 54, 418, 770, 1110, 1639, 2048] {
+            for mv in [2600u64, 3300, 3700, 3910, 4200, 4500] {
+                let xy = (y << 16) | x;
+                let (s0_a, s1_a, s2_a, s3_a) =
+                    phone_studio::run_blu_g75_snap_circuit(xy, mv, false);
+                let (s0_b, s1_b, s2_b, s3_b) =
+                    phone_studio::run_blu_g75_snap_circuit(xy, mv, true);
+                assert_eq!(s0_a, s0_b);
+                assert_eq!(s1_a, s1_b);
+                assert_eq!(s2_a, s2_b);
+                assert_eq!(s3_a, s3_b);
+                assert_eq!(s3_b >> 47, 0x0001_FFFF);
+            }
+        }
+    }
+}
