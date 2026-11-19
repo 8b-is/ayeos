@@ -547,8 +547,8 @@ pub fn parse_dhcp_packet(pkt: &[u8]) -> Option<ParsedDhcpRequest> {
     })
 }
 
-/// Select the architecture-appropriate PXE / UEFI / iPXE / Raspberry Pi bootfile name
-/// based on DHCP Option 93 (`arch_type`), Option 60 (`vendor_class`), and MAC OUI.
+/// Select the architecture-appropriate PXE / UEFI / UEFI HTTP Boot / iPXE / Raspberry Pi bootfile name
+/// based on DHCP Option 93 (`arch_type`, RFC 4578), Option 60 (`vendor_class`), and MAC OUI.
 pub fn select_pxe_bootfile_for_request(
     req: &ParsedDhcpRequest,
     lease: &MemnetDhcpLease,
@@ -559,19 +559,62 @@ pub fn select_pxe_bootfile_for_request(
     if lease.is_raspberry_pi {
         return "kernel8.img".to_string();
     }
+    let http_root = lease
+        .bootfile_url
+        .rsplit_once('/')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or("http://172.16.47.76:8432/boot");
+    let is_http_boot = req.vendor_class.contains("HTTPClient")
+        || matches!(req.arch_type, Some(15) | Some(16) | Some(19));
+
     match req.arch_type {
-        Some(7) | Some(9) => return "BOOTX64.EFI".to_string(),
-        Some(6) => return "BOOTIA32.EFI".to_string(),
-        Some(11) => return "BOOTAA64.EFI".to_string(),
+        Some(16) => return format!("{http_root}/BOOTX64.EFI"),
+        Some(19) => return format!("{http_root}/BOOTAA64.EFI"),
+        Some(15) => return format!("{http_root}/BOOTIA32.EFI"),
+        Some(7) | Some(9) => {
+            return if is_http_boot {
+                format!("{http_root}/BOOTX64.EFI")
+            } else {
+                "BOOTX64.EFI".to_string()
+            };
+        }
+        Some(6) => {
+            return if is_http_boot {
+                format!("{http_root}/BOOTIA32.EFI")
+            } else {
+                "BOOTIA32.EFI".to_string()
+            };
+        }
+        Some(10) | Some(11) => {
+            return if is_http_boot {
+                format!("{http_root}/BOOTAA64.EFI")
+            } else {
+                "BOOTAA64.EFI".to_string()
+            };
+        }
         Some(0) => return "limine-bios-pxe.bin".to_string(),
         _ => {}
     }
-    if req.vendor_class.contains("Arch:00007") || req.vendor_class.contains("Arch:00009") {
-        "BOOTX64.EFI".to_string()
+    if req.vendor_class.contains("Arch:00016") {
+        format!("{http_root}/BOOTX64.EFI")
+    } else if req.vendor_class.contains("Arch:00019") {
+        format!("{http_root}/BOOTAA64.EFI")
+    } else if req.vendor_class.contains("Arch:00007") || req.vendor_class.contains("Arch:00009") {
+        if is_http_boot {
+            format!("{http_root}/BOOTX64.EFI")
+        } else {
+            "BOOTX64.EFI".to_string()
+        }
     } else if req.vendor_class.contains("Arch:00006") {
         "BOOTIA32.EFI".to_string()
-    } else if req.vendor_class.contains("Arch:00011") {
-        "BOOTAA64.EFI".to_string()
+    } else if req.vendor_class.contains("Arch:00011") || req.vendor_class.contains("Arch:00010") {
+        if is_http_boot {
+            format!("{http_root}/BOOTAA64.EFI")
+        } else {
+            "BOOTAA64.EFI".to_string()
+        }
+    } else if is_http_boot {
+        format!("{http_root}/BOOTX64.EFI")
     } else if req.vendor_class.contains("PXEClient") {
         "limine-bios-pxe.bin".to_string()
     } else {
@@ -603,7 +646,9 @@ pub fn build_memnet_dhcp_reply(
         &req.hostname,
     );
 
-    let is_pxe_client = req.vendor_class.contains("PXEClient") || req.arch_type.is_some();
+    let is_pxe_client = req.vendor_class.contains("PXEClient")
+        || req.vendor_class.contains("HTTPClient")
+        || req.arch_type.is_some();
 
     // In ProxyPxeAndOpportunistic mode on a shared LAN, if the client is NOT a PXE/iPXE/Pi netboot
     // client and we are not in FullAuthoritativeSubnet mode, let the home router handle generic phones/laptops.
@@ -714,6 +759,13 @@ pub fn build_memnet_dhcp_reply(
         ];
         pkt.extend_from_slice(&[43, rpi_opt43.len() as u8]);
         pkt.extend_from_slice(rpi_opt43);
+    } else if req.vendor_class.contains("HTTPClient")
+        || matches!(req.arch_type, Some(15) | Some(16) | Some(19))
+    {
+        // UEFI 2.5+ HTTP Boot (HttpBootDxe) requires Option 60 = "HTTPClient" in the DHCP OFFER/ACK
+        let vci = b"HTTPClient";
+        pkt.extend_from_slice(&[60, vci.len() as u8]);
+        pkt.extend_from_slice(vci);
     }
 
     // End Option (255)
@@ -1119,5 +1171,49 @@ mod tests {
         let offer_bios = build_memnet_dhcp_reply(&parsed_bios, &mut backend).expect("BIOS OFFER");
         let file_bios = String::from_utf8_lossy(&offer_bios[108..108 + 19]);
         assert_eq!(file_bios, "limine-bios-pxe.bin");
+
+        // 3. ARM64 UEFI PXE client (Option 93 = 0x000B, MAC 00:1B:21:11:22:33)
+        let mut arm64_disc = vec![0u8; 240];
+        arm64_disc[0] = 1;
+        arm64_disc[1] = 1;
+        arm64_disc[2] = 6;
+        arm64_disc[4..8].copy_from_slice(&0xABCD_0003u32.to_be_bytes());
+        arm64_disc[28..34].copy_from_slice(&[0x00, 0x1B, 0x21, 0x11, 0x22, 0x33]);
+        arm64_disc[236..240].copy_from_slice(&DHCP_MAGIC_COOKIE);
+        arm64_disc.extend_from_slice(&[53, 1, DHCP_DISCOVER]);
+        arm64_disc.extend_from_slice(&[93, 2, 0x00, 0x0B]); // EFI ARM64
+        let vci_arm64 = b"PXEClient:Arch:00011:UNDI:003000";
+        arm64_disc.extend_from_slice(&[60, vci_arm64.len() as u8]);
+        arm64_disc.extend_from_slice(vci_arm64);
+        arm64_disc.push(255);
+
+        let parsed_arm64 = parse_dhcp_packet(&arm64_disc).expect("valid ARM64 UEFI DHCPDISCOVER");
+        assert_eq!(parsed_arm64.arch_type, Some(11));
+        let offer_arm64 = build_memnet_dhcp_reply(&parsed_arm64, &mut backend).expect("ARM64 OFFER");
+        let file_arm64 = String::from_utf8_lossy(&offer_arm64[108..108 + 12]);
+        assert_eq!(file_arm64, "BOOTAA64.EFI");
+
+        // 4. x86_64 UEFI HTTP Boot client (Option 93 = 0x0010, VCI = "HTTPClient:Arch:00016:UNDI:003001")
+        let mut http_disc = vec![0u8; 240];
+        http_disc[0] = 1;
+        http_disc[1] = 1;
+        http_disc[2] = 6;
+        http_disc[4..8].copy_from_slice(&0xABCD_0004u32.to_be_bytes());
+        http_disc[28..34].copy_from_slice(&[0x00, 0x1B, 0x21, 0x44, 0x55, 0x66]);
+        http_disc[236..240].copy_from_slice(&DHCP_MAGIC_COOKIE);
+        http_disc.extend_from_slice(&[53, 1, DHCP_DISCOVER]);
+        http_disc.extend_from_slice(&[93, 2, 0x00, 0x10]); // x64 uefi boot from http
+        let vci_http = b"HTTPClient:Arch:00016:UNDI:003001";
+        http_disc.extend_from_slice(&[60, vci_http.len() as u8]);
+        http_disc.extend_from_slice(vci_http);
+        http_disc.push(255);
+
+        let parsed_http = parse_dhcp_packet(&http_disc).expect("valid UEFI HTTP Boot DHCPDISCOVER");
+        assert_eq!(parsed_http.arch_type, Some(16));
+        let offer_http = build_memnet_dhcp_reply(&parsed_http, &mut backend).expect("HTTP BOOT OFFER");
+        let expected_url = "http://172.16.47.76:8432/boot/BOOTX64.EFI";
+        let file_http = String::from_utf8_lossy(&offer_http[108..108 + expected_url.len()]);
+        assert_eq!(file_http, expected_url);
+        assert!(String::from_utf8_lossy(&offer_http[240..]).contains("HTTPClient"));
     }
 }

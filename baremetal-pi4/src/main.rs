@@ -506,7 +506,7 @@ const COLOR_HEADER: u32 = 0xFF0A_0E1A;   // Header Navy
 const COLOR_CARD: u32 = 0xFF0B_101E;     // Stage Card
 const COLOR_MINT: u32 = 0xFF62_E6C9;     // Mint #62E6C9
 const COLOR_GOLD: u32 = 0xFFE8_B05C;     // Gold #E8B05C
-const COLOR_VIOLET: u32 = 0xFFB4_8BFF;   // Violet #B48BFF
+const COLOR_CYAN: u32 = 0xFF00_F0FF;     // Cyan #00F0FF (Zero Purple)
 const COLOR_TEXT: u32 = 0xFFE8_EEF7;     // Crisp Ice White
 
 #[no_mangle]
@@ -542,8 +542,8 @@ pub extern "C" fn ayeos_pi4_baremetal_main() -> ! {
     draw_text(&fb, 44, 208, 2, "- NODE IP : 172.16.47.116 -> 172.16.47.76", COLOR_TEXT);
     draw_text(&fb, 44, 238, 2, "- LINOSV  : 67DC0028CFE67AB7 TERNARY MESH", COLOR_MINT);
     draw_text(&fb, 44, 268, 2, "- DAC HAT : RASPIAUDIO PCM5102A I2S HIFI", COLOR_GOLD);
-    draw_text(&fb, 44, 298, 2, "- ENGINE  : 768KHZ CATMULL-ROM + BABBAGE 3-ADD", COLOR_TEXT);
-    draw_text(&fb, 44, 328, 2, "- TUNING  : 432 HZ + PHI (500/809) + 528 HZ", COLOR_VIOLET);
+    draw_text(&fb, 44, 298, 2, "- G8T.IS  : SNAP CIRCUIT 0XFFFFE47F4C607310", COLOR_CYAN);
+    draw_text(&fb, 44, 328, 2, "- TUNING  : 432 HZ + PHI (500/809) + 528 HZ", COLOR_CYAN);
     draw_text(&fb, 44, 368, 2, "FINE TOUCH FROM WITHIN  <3 <3 <3 + 1", COLOR_GOLD);
 
     // 2. Real-time 60fps Visualizer + Live Bare-Metal I2S Audio Synthesis Loop
@@ -593,7 +593,7 @@ pub extern "C" fn ayeos_pi4_baremetal_main() -> ! {
             } else if idx < 24 {
                 COLOR_GOLD
             } else {
-                COLOR_VIOLET
+                COLOR_CYAN
             };
 
             if new_h > old_h {

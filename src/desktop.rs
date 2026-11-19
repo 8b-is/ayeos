@@ -779,7 +779,7 @@ pub fn render_ayeos_desktop_html(st: &AyeosDesktopState) -> String {
     font-size: 12px;
   }}
   .btn-gold {{ border-color: #e8b05c; color: #e8b05c; }}
-  .btn-violet {{ border-color: #b48bff; color: #b48bff; }}
+  .btn-cyan {{ border-color: #00f0ff; color: #00f0ff; }}
   .badge {{
     padding: 6px 10px;
     background: #121826;
@@ -861,7 +861,7 @@ pub fn render_ayeos_desktop_html(st: &AyeosDesktopState) -> String {
     <span class="badge" id="quanta-badge">Quanta Saved: {}</span>
     <button class="btn" onclick="setPresence('desk')">🖥️ At Desk</button>
     <button class="btn btn-gold" onclick="setPresence('bedroom')">🛏️ Move to Bedroom (OxiCast)</button>
-    <button class="btn btn-violet" onclick="setPresence('bathroom_veil')">🚪 Bathroom Break (Privacy Veil)</button>
+    <button class="btn btn-cyan" onclick="setPresence('bathroom_veil')">🚪 Bathroom Break (Privacy Veil)</button>
   </div>
 </header>
 <main>

@@ -255,19 +255,22 @@ pub fn build_ayeos_oxicast_json(state: &AyeosOxicastState) -> String {
     )
 }
 
-/// Generate a deterministic `#!ipxe` network-boot script so any diskless Raspberry Pi 4 (or x86_64
-/// iPXE client) chains straight into `ayeOS` TV Sanctuary over HTTP in RAM!
+/// Generate a deterministic `#!ipxe` network-boot script so any diskless `x86_64` PC, `ARM64` server/VM,
+/// or Raspberry Pi 4 iPXE client chains straight into `ayeOS` over HTTP in RAM!
 pub fn build_ayeos_ipxe_script(host_with_port: &str) -> String {
     let linosv = seed_hash_hex();
     let short_linosv = &linosv[..16];
     format!(
         "#!ipxe\n\
-dhcp || echoUsing existing link configuration\n\
+dhcp || echo Using existing link configuration\n\
 echo ==================================================================\n\
-echo   8b-is AyeOS x OxiCast x PhoeniX TV Sanctuary (Diskless iPXE)\n\
+echo   8b-is AyeOS v1.1.0 Universal Multi-Arch Netboot (Diskless iPXE)\n\
 echo   Mother Node : http://{host_with_port} · LINOSV={short_linosv}\n\
-echo   Audio       : 768kHz Catmull-Rom + Babbage 3-Add Cubic Stepper\n\
+echo   Arch        : ${{buildarch}} (${{platform}})\n\
+echo   g8t.is Snap : 0xFFFFE47F4C607310 (v1==v2 Verified)\n\
 echo ==================================================================\n\
+iseq ${{buildarch}} x86_64 && chain http://{host_with_port}/boot/BOOTX64.EFI ||\n\
+iseq ${{buildarch}} arm64 && chain http://{host_with_port}/boot/BOOTAA64.EFI ||\n\
 kernel http://{host_with_port}/boot/kernel8.img init=/init rdinit=/init console=tty1 ayeos.peer={host_with_port} ayeos.mode=tv-sanctuary\n\
 initrd http://{host_with_port}/boot/ayeos-initramfs.cpio\n\
 boot\n"
@@ -429,6 +432,7 @@ pub fn resolve_netboot_artifact(
             // If Pi requested `<8-hex-serial>/start4.elf`, also try without serial prefix
             for search_root in [
                 netboot_dir,
+                Path::new("/home/hue/source/8b-is/ayeos/netboot"),
                 Path::new("/var/lib/ayeos/netboot"),
                 Path::new("/home/hue/.cache/oxicast-pi/netboot"),
                 Path::new("/usr/share/limine"),
@@ -859,7 +863,7 @@ pub fn render_oxicast_fb0_frame(
         } else if idx < 24 {
             [0x5C, 0xB0, 0xE8, 0xFF] // Gold (Velvet Noise)
         } else {
-            [0xFF, 0x8B, 0xB4, 0xFF] // Violet (Dirac Transients)
+            [0xFF, 0xF0, 0x00, 0xFF] // Cyan #00F0FF (Dirac Transients — Zero Purple)
         };
         for y in (h - bar_h)..h {
             for x in x0..(x0 + bar_w).min(w) {
@@ -1175,7 +1179,7 @@ function draw() {{
     const bh = Math.floor((e * h) / 1400);
     const x = 16 + i * slotW;
     const y = h - bh - 16;
-    ctx.fillStyle = (i < 12) ? '#62e6c9' : ((i < 24) ? '#e8b05c' : '#b48bff');
+    ctx.fillStyle = (i < 12) ? '#62e6c9' : ((i < 24) ? '#e8b05c' : '#00f0ff');
     ctx.fillRect(x, y, barW, bh);
   }}
   requestAnimationFrame(draw);

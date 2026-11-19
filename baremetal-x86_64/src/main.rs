@@ -280,8 +280,32 @@ const COLOR_HEADER: u32 = 0xFF0A_0E1A;   // Header Navy
 const COLOR_CARD: u32 = 0xFF0B_101E;     // Stage Card
 const COLOR_MINT: u32 = 0xFF62_E6C9;     // Mint #62E6C9
 const COLOR_GOLD: u32 = 0xFFE8_B05C;     // Gold #E8B05C
-const COLOR_VIOLET: u32 = 0xFFB4_8BFF;   // Violet #B48BFF
+const COLOR_CYAN: u32 = 0xFF00_F0FF;     // Cyan #00F0FF (Zero Purple)
 const COLOR_TEXT: u32 = 0xFFE8_EEF7;     // Crisp Ice White
+
+#[inline(always)]
+pub const fn ayeos_g8t_snap_v2_seal(touch_xy: u64, bat_mv: u64) -> u64 {
+    const WHITE_SEMIS: [u64; 14] = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23];
+    const SGEN_MULTS: [u64; 24] = [
+        1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14,
+    ];
+    let x = if (touch_xy & 0xFFFF) > 719 { 719 } else { touch_xy & 0xFFFF };
+    let y = if ((touch_xy >> 16) & 0xFFFF) > 1639 { 1639 } else { (touch_xy >> 16) & 0xFFFF };
+    let mv = if bat_mv < 3000 { 3000 } else if bat_mv > 4400 { 4400 } else { bat_mv };
+    let kx = if x < 66 { 0 } else if x > 639 { 573 } else { x - 66 };
+    let white_idx = ((kx * 1000) / 41000) as usize;
+    let rem = kx - (white_idx as u64) * 41;
+    let sharp = ((y < 1092) as u64) & ((rem >= 28) as u64);
+    let base_semi = WHITE_SEMIS[white_idx];
+    let semi = if base_semi + sharp < 23 { base_semi + sharp } else { 23 };
+    let mult = SGEN_MULTS[semi as usize];
+    let acc_hz = mult * 125;
+    let cfg0 = 0x4400 | (mult << 4);
+    let cfg1 = (mult << 8) | mult;
+    let crest_q10 = (mv * 1024) / 4200;
+    let crest_word = (crest_q10 << 48) | (acc_hz << 32) | (cfg0 << 16) | cfg1 | (semi << 24);
+    (0x0001_FFFFu64 << 47) | (crest_word & 0x0000_7FFF_FFFF_FFFF)
+}
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -350,8 +374,17 @@ pub extern "C" fn _start() -> ! {
     draw_text(&fb, 44, 208, 2, "- MOTHER  : 172.16.47.76 (MEMNET TFTP + DHCP)", COLOR_TEXT);
     draw_text(&fb, 44, 238, 2, "- LINOSV  : 67DC0028CFE67AB7 TERNARY MESH", COLOR_MINT);
     draw_text(&fb, 44, 268, 2, "- DISPLAY : LIMINE GOP/VBE 32-BIT FRAMEBUFFER", COLOR_GOLD);
-    draw_text(&fb, 44, 298, 2, "- ENGINE  : 768KHZ CATMULL-ROM + BABBAGE 3-ADD", COLOR_TEXT);
-    draw_text(&fb, 44, 328, 2, "- TUNING  : 432 HZ + PHI (500/809) + 528 HZ", COLOR_VIOLET);
+    let snap_ok = ayeos_g8t_snap_v2_seal(72_745_230, 3903) == 0xFFFF_E47F_4C60_7310;
+    if snap_ok {
+        unsafe {
+            for &b in b"AYEOS_X86_64_G8T_SNAP_OK=0xFFFFE47F4C607310\r\n" {
+                outb(0x3F8, b);
+            }
+        }
+    }
+
+    draw_text(&fb, 44, 298, 2, "- G8T.IS  : SNAP CIRCUIT 0XFFFFE47F4C607310", COLOR_CYAN);
+    draw_text(&fb, 44, 328, 2, "- TUNING  : 432 HZ + PHI (500/809) + 528 HZ", COLOR_CYAN);
     draw_text(&fb, 44, 368, 2, "FINE TOUCH FROM WITHIN  <3 <3 <3 + 1", COLOR_GOLD);
 
     let mut frame_seq: i64 = 0;
@@ -412,7 +445,7 @@ pub extern "C" fn _start() -> ! {
             } else if idx < 24 {
                 COLOR_GOLD
             } else {
-                COLOR_VIOLET
+                COLOR_CYAN
             };
 
             if new_h > old_h {
