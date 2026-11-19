@@ -1,0 +1,12 @@
+[package]
+name = "ayeos-manifest"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-C, zero-float #![no_std] common CapsuleManifest with distinct Function/App/Driver permissions, lifecycles, anti-downgrade signature policies, and hard admission/isolation gates."
+
+[features]
+default = ["std"]
+std = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }

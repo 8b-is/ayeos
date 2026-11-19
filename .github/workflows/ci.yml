@@ -21,11 +21,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Zero-C boot & kernel guard
+        run: bash scripts/check_zero_c_boot.sh
+
+      - name: Manifest policy & gate tests
+        run: cargo test --manifest-path crates/ayeos-manifest/Cargo.toml
+
+      - name: Build zero-dep no_std capsules
+        working-directory: capsules
+        run: cargo build --release
+
       - name: Build
         run: cargo build --release
 
       - name: Test
         run: cargo test --release
+
+      - name: Linux isolated function swap & rollback acceptance test
+        run: |
+          cargo build --release --bin ayeos-capsule-sign --bin ayeos-capsule-worker --bin ayeos-inspector
+          cargo test --release --test function_swap_acceptance
 
   phone_diagnostics:
     name: Phone diagnostic host tests

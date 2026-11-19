@@ -1,6 +1,8 @@
 pub mod boot_mt6768;
 pub mod desktop;
+pub mod function_swap;
 pub mod genesis;
+pub mod inspector;
 pub mod memnet;
 pub mod memnet_fabric;
 pub mod mt6631;

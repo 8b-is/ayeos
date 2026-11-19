@@ -1,0 +1,8 @@
+[package]
+name = "ayeos-fn-harmonic-fold-ctor-escape"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+name = "ayeos_fn_harmonic_fold_ctor_escape"

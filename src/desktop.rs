@@ -169,7 +169,8 @@ pub struct LoopIoIntervention {
     pub cpu_quanta_saved: u64,
 }
 
-/// Verified `g8t` SmartPastCode binary/assembly replacement rule (`#Commit = #ValidWitness`).
+/// `g8t` replacement entry. `executable_swapped` distinguishes real signed-capsule code swaps
+/// recorded via `FunctionSwapEngine` from catalog pattern-match entries (which do not swap code).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct G8tAssemblyPatch {
     pub legacy_symbol: String,
@@ -179,6 +180,8 @@ pub struct G8tAssemblyPatch {
     pub speedup_pq: RationalPq,
     pub hotpatches_applied: u64,
     pub compute_quanta_saved: u64,
+    /// `true` ONLY when real executable code was swapped via `FunctionSwapEngine` with measured timings.
+    pub executable_swapped: bool,
 }
 
 /// Record of a bad-actor telemetry or privacy probe trapped at the VM boundary.
@@ -339,6 +342,7 @@ impl Default for AyeosDesktopState {
                     speedup_pq: RationalPq::new(14, 1),
                     hotpatches_applied: 19,
                     compute_quanta_saved: 410_000,
+                    executable_swapped: false,
                 },
                 G8tAssemblyPatch {
                     legacy_symbol: "rep_movsb_unaligned_poll".to_string(),
@@ -348,6 +352,7 @@ impl Default for AyeosDesktopState {
                     speedup_pq: RationalPq::new(9, 1),
                     hotpatches_applied: 37,
                     compute_quanta_saved: 620_000,
+                    executable_swapped: false,
                 },
                 G8tAssemblyPatch {
                     legacy_symbol: "pcm_float_fft_resampler".to_string(),
@@ -357,6 +362,7 @@ impl Default for AyeosDesktopState {
                     speedup_pq: RationalPq::new(32, 1),
                     hotpatches_applied: 12,
                     compute_quanta_saved: 890_000,
+                    executable_swapped: false,
                 },
             ],
             trap_ledger: vec![
@@ -543,17 +549,18 @@ impl AyeosDesktopState {
         }
 
         if matched.is_none() {
-            // Register a new verified g8t hotpatch on the fly
+            // Pattern-match record ONLY: does NOT swap executable code and does NOT fabricate a speedup.
+            // Real executable swaps must go through `FunctionSwapEngine` + `record_verified_function_swap`.
             let new_patch = G8tAssemblyPatch {
                 legacy_symbol: symbol_or_pattern.trim().to_string(),
                 wave_signature_q10: [512, 640, 768, 896, 1024, 512, 384, 256],
                 witness_blake3_hex: compute_patch_witness_hex(symbol_or_pattern.as_bytes()),
-                sovereign_replacement: "g8t_verified_integer_fastpath_q15".to_string(),
-                speedup_pq: RationalPq::new(12, 1),
-                hotpatches_applied: 1,
-                compute_quanta_saved: 32_768,
+                sovereign_replacement: "catalog_match_only_no_exec_swap".to_string(),
+                speedup_pq: RationalPq::new(1, 1),
+                hotpatches_applied: 0,
+                compute_quanta_saved: 0,
+                executable_swapped: false,
             };
-            self.total_cpu_quanta_saved = self.total_cpu_quanta_saved.wrapping_add(32_768);
             self.g8t_patches.push(new_patch.clone());
             matched = Some(new_patch);
         }
@@ -562,6 +569,38 @@ impl AyeosDesktopState {
             pane.g8t_hotpatches_active = pane.g8t_hotpatches_active.wrapping_add(1);
         }
         matched
+    }
+
+    /// Record a REAL executable function swap verified by `FunctionSwapEngine` (Ed25519 + BLAKE3 +
+    /// 64-vector equivalence + measured timings). Never fabricates speedup ratios.
+    pub fn record_verified_function_swap(
+        &mut self,
+        pane_id: u32,
+        symbol: &str,
+        capsule_id: &str,
+        artifact_blake3_hex: &str,
+        bench: &crate::function_swap::MeasuredSwapBenchmark,
+    ) -> G8tAssemblyPatch {
+        let patch = G8tAssemblyPatch {
+            legacy_symbol: symbol.to_string(),
+            wave_signature_q10: [1024, 896, 768, 640, 512, 384, 256, 128],
+            witness_blake3_hex: artifact_blake3_hex.chars().take(32).collect(),
+            sovereign_replacement: format!(
+                "{capsule_id} (measured {}ns -> {}ns inner)",
+                bench.baseline_total_ns, bench.capsule_inner_total_ns
+            ),
+            speedup_pq: RationalPq::new(bench.inner_speedup_num, bench.inner_speedup_den),
+            hotpatches_applied: 1,
+            compute_quanta_saved: bench
+                .baseline_total_ns
+                .saturating_sub(bench.capsule_inner_total_ns),
+            executable_swapped: true,
+        };
+        self.g8t_patches.push(patch.clone());
+        if let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) {
+            pane.g8t_hotpatches_active = pane.g8t_hotpatches_active.wrapping_add(1);
+        }
+        patch
     }
 
     /// Enforce the **Aye & Hue Sacred Inner Sanctum Covenant**.
