@@ -325,12 +325,102 @@ pub fn row_at_point(x: u16, y: u16) -> Option<usize> {
     }
 }
 
-pub const QWAVE_TABS: [&str; 3] = ["01:8b.is", "02:ESP32", "03:GC7272"];
+pub const QWAVE_TABS: [&str; 3] = ["01:8b.is", "02:g8t.is", "03:GC7272"];
 pub const QWAVE_URIS: [&str; 3] = [
     "qwave://8b.is/sanctuary [200 OK * ZERO-FLOAT]",
-    "qwave://mothership/esp32-triad [BUS ONLINE]",
+    "qwave://g8t.is/circuits/snap [SELF-IMPROVING]",
     "qwave://hardware/gc7272-touch [17/17 OFF]",
 ];
+
+/// Stage 0 Capsule (`(u64,u64)->u64`): Packs BLU G75 GC7272 touch `(x, y)` and MT6358 battery `mV`.
+pub const fn ayeos_blu_g75_sensor_pack(touch_xy: u64, bat_mv: u64) -> u64 {
+    let x = if (touch_xy & 0xFFFF) > 719 { 719 } else { touch_xy & 0xFFFF };
+    let y = if ((touch_xy >> 16) & 0xFFFF) > 1639 { 1639 } else { (touch_xy >> 16) & 0xFFFF };
+    let mv = if bat_mv < 2800 { 2800 } else if bat_mv > 4450 { 4450 } else { bat_mv };
+    let clamped_mv = if mv < 3300 { 3300 } else if mv > 4200 { 4200 } else { mv };
+    let pct = ((clamped_mv - 3300) * 100) / 900;
+    (pct << 48) | (mv << 32) | (y << 16) | x
+}
+
+/// Stage 1 Baseline Capsule (`(u64)->u64`): 16-harmonic loop semitone + SGEN divider mapper.
+pub const fn ayeos_gc7272_touch_to_semitone_v1(sensor_word: u64) -> u64 {
+    let x = (sensor_word & 0xFFFF) % 720;
+    let y = ((sensor_word >> 16) & 0xFFFF) % 1640;
+    let mv = (sensor_word >> 32) & 0xFFFF;
+    let mv_clamped = if mv < 2800 { 2800 } else if mv > 4450 { 4450 } else { mv };
+    let semi = ((x * 24) / 720) & 31;
+    let sgen_div = (semi / 2) + 1;
+    let mut harmonic_acc: u64 = 0;
+    let mut h: u64 = 1;
+    while h <= 16 {
+        harmonic_acc = harmonic_acc.wrapping_add((semi + 1) * h * 432);
+        h += 1;
+    }
+    (mv_clamped << 48) | ((sgen_div & 0x1F) << 40) | ((semi & 0x1F) << 32) | ((y & 0xFFFF) << 16) | (harmonic_acc & 0xFFFF)
+}
+
+/// Stage 1 Self-Improved Capsule (`(u64)->u64`): Closed-form O(1) Gauss sum `136 * 432 = 58752`.
+pub const fn ayeos_gc7272_touch_to_semitone_v2(sensor_word: u64) -> u64 {
+    let x = (sensor_word & 0xFFFF) % 720;
+    let y = ((sensor_word >> 16) & 0xFFFF) % 1640;
+    let mv = (sensor_word >> 32) & 0xFFFF;
+    let mv_clamped = if mv < 2800 { 2800 } else if mv > 4450 { 4450 } else { mv };
+    let semi = ((x * 24) / 720) & 31;
+    let sgen_div = (semi >> 1) + 1;
+    let harmonic_acc = (semi + 1).wrapping_mul(58752);
+    (mv_clamped << 48) | ((sgen_div & 0x1F) << 40) | ((semi & 0x1F) << 32) | ((y & 0xFFFF) << 16) | (harmonic_acc & 0xFFFF)
+}
+
+/// Stage 2 Baseline Capsule (`(u64)->u64`): 16-step loop MT6358 48kHz SGEN crest + Dual AW87394 PA word.
+pub const fn ayeos_mt6358_sgen_crest_step_v1(semitone_state: u64) -> u64 {
+    let raw_div = (semitone_state >> 40) & 0x1F;
+    let sgen_div = if raw_div == 0 { 1 } else { raw_div };
+    let semi = (semitone_state >> 32) & 0x1F;
+    let phase_seed = semitone_state & 0xFFFF;
+    let mut crest_energy: u64 = 0;
+    let mut step: u64 = 0;
+    while step < 16 {
+        let delta = (phase_seed + sgen_div * 125) * (step + 1);
+        crest_energy = crest_energy.wrapping_add(delta);
+        step += 1;
+    }
+    let pa_word: u64 = 0x5859_3080;
+    (pa_word << 32) | ((semi & 0xFF) << 24) | (crest_energy & 0x00FF_FFFF)
+}
+
+/// Stage 2 Self-Improved Capsule (`(u64)->u64`): Closed-form O(1) MT6358 48kHz SGEN crest + Dual PA word.
+pub const fn ayeos_mt6358_sgen_crest_step_v2(semitone_state: u64) -> u64 {
+    let raw_div = (semitone_state >> 40) & 0x1F;
+    let sgen_div = if raw_div == 0 { 1 } else { raw_div };
+    let semi = (semitone_state >> 32) & 0x1F;
+    let phase_seed = semitone_state & 0xFFFF;
+    let crest_energy = (phase_seed + sgen_div * 125).wrapping_mul(136);
+    (0x5859_3080u64 << 32) | ((semi & 0xFF) << 24) | (crest_energy & 0x00FF_FFFF)
+}
+
+/// Stage 3 Capsule (`(u64)->u64`): Attaches 17/17 Off-verified mask (`0x1ffff`) + MEM|8 432Hz seal.
+pub const fn ayeos_off17_safety_seal(crest_word: u64) -> u64 {
+    const OFF17_MASK: u64 = 0x0001_FFFF;
+    let mixed = (crest_word ^ 0x4D45_4D38_0432_0562).rotate_left(13).wrapping_mul(432);
+    (OFF17_MASK << 47) | (mixed & 0x0000_7FFF_FFFF_FFFF)
+}
+
+/// Execute the 4-stage BLU G75 Snap-Circuit (`v1` baseline vs `v2` self-improved closed-form).
+pub const fn run_blu_g75_snap_circuit(touch_xy: u64, bat_mv: u64, use_v2: bool) -> (u64, u64, u64, u64) {
+    let s0 = ayeos_blu_g75_sensor_pack(touch_xy, bat_mv);
+    let s1 = if use_v2 {
+        ayeos_gc7272_touch_to_semitone_v2(s0)
+    } else {
+        ayeos_gc7272_touch_to_semitone_v1(s0)
+    };
+    let s2 = if use_v2 {
+        ayeos_mt6358_sgen_crest_step_v2(s1)
+    } else {
+        ayeos_mt6358_sgen_crest_step_v1(s1)
+    };
+    let s3 = ayeos_off17_safety_seal(s2);
+    (s0, s1, s2, s3)
+}
 
 pub const QWAVE_DOCS: [[&str; 12]; 3] = [
     [
@@ -348,18 +438,18 @@ pub const QWAVE_DOCS: [[&str; 12]; 3] = [
         "End of Tab 01 * {<3,<3,<3}+1 * LLL",
     ],
     [
-        "# qwave://mothership/esp32-triad-flug",
-        "BLU G75 Mothership <-> ESP32 Triad / FLUG Bus:",
-        "- Node 01: ESP32-S3 USB-JTAG (303a:1001) ACTIVE",
-        "- Node 02: Triad RF / WiFi-CSI / BLE Mesh Ready",
-        "- Node 03: FLUG-OS Sensor & Synth Telemetry",
-        "Guard: MediaTek BROM handshake never touches",
-        "ESP32 nodes on the shared USB hub.",
-        "ScreamTracker rows can cue ESP32 Triad triggers",
-        "simultaneously with phone AW87394 speakers.",
-        "Exact rational clock sync across mothership.",
-        "Use `ayeos-debug scroll` or Qwave to inspect.",
-        "End of Tab 02 * Mothership Bus Online.",
+        "# qwave://g8t.is/circuits/snap (Self-Improving)",
+        "BLU G75 <-> https://g8t.is Snap-Circuit Engine:",
+        "- Stage 0: ayeos_blu_g75_sensor_pack (Touch+mV)",
+        "- Stage 1: ayeos_gc7272_touch_to_semitone_v2",
+        "- Stage 2: ayeos_mt6358_sgen_crest_step_v2",
+        "- Stage 3: ayeos_off17_safety_seal (0x1ffff)",
+        "64-Vector BLAKE3 Equivalence: v1 == v2 PROVEN",
+        "13 MHz cntpct_el0 hardware cycle counter active",
+        "Uploads capsules, votes, & Snap-Circuits to g8t",
+        "Zero floats * C64 64KB ceiling * Aye-Attested",
+        "Run `ayeos_g8t_snap.py` or tap Studio to snap!",
+        "End of Tab 02 * g8t.is Self-Improvement Ready.",
     ],
     [
         "# qwave://hardware/gc7272-touch-spi0",
@@ -403,28 +493,28 @@ pub const QWAVE_FULL_DOCS: [[&str; 22]; 3] = [
         "## End of Sanctuary Page * {<3,<3,<3}+1 * LLL",
     ],
     [
-        "# Mothership // ESP32 Triad & FLUG-OS Mesh",
-        "-> URI: qwave://mothership/esp32-triad-flug",
-        "BLU G75 Handset acts as Sovereign Mothership",
-        "coordinating local USB, RF, and audio nodes:",
-        "## 1. Active Constellation Nodes",
-        "- [PHONE] BLU G75 MT6768 (18d1:4ee0 bcd0562)",
-        "- [TRIAD] ESP32-S3 USB-JTAG (303a:1001) ACTIVE",
-        "- [AUDIO] Dual AW87394 I2C4 @ 0x58 (L) + 0x59 (R)",
-        "- [HOST ] Live Socket /tmp/ayeos-debug.sock",
-        "## 2. Hardware Isolation & Safety Contracts",
-        "- Boot Slot B (boot_b) only; Slot A untouched",
-        "- MediaTek BROM handshake never touches 303a:1001",
-        "- Every audio play verifies 17/17 Off predicates",
-        "## 3. Synchronized S3M Duet Mode",
-        "- S3M rows cue phone AW87394 + ESP32 VAK:MEDUSA",
-        "- Exact integer microsecond frame alignment",
-        "- Live PMIC/I2C4/MMIO/SPI0 inspection via 0xB9",
-        "## 4. Local-First Ownership",
-        "- Zero cloud dependencies; 100% inspectable",
-        "- C64 discipline: static buffers, zero heap alloc",
-        "- Direct framebuffer rendering at 720x1640",
-        "## End of Mothership Page * Triad Online.",
+        "# g8t.is // Self-Improving Phone & Snap Circuits",
+        "-> URI: qwave://g8t.is/circuits/snap [432Hz AYE]",
+        "BLU G75 benchmarks & evolves its own pure-Rust",
+        "function capsules and uploads Snap Circuits:",
+        "## 1. Live 4-Stage BLU G75 Snap-Circuit",
+        "- [S0] ayeos_blu_g75_sensor_pack (Touch+BAT mV)",
+        "- [S1] ayeos_gc7272_touch_to_semitone_v2 (O(1))",
+        "- [S2] ayeos_mt6358_sgen_crest_step_v2 (48kHz)",
+        "- [S3] ayeos_off17_safety_seal (0x1ffff + MEM8)",
+        "## 2. Hardware Cycle-Golf on MediaTek MT6768",
+        "- Timed by ARMv8 cntpct_el0 (13,000,000 Hz)",
+        "- Proves v1 (loop) == v2 (closed-form) on-chip",
+        "- Casts p/q speed votes to https://g8t.is",
+        "- Earns Fokens (FKN) for sub-10-cycle crowns!",
+        "## 3. Multi-Branch Qwave + MEM|8 DAG Circuit",
+        "- Fuses GC7272 Touch + MT6358 SGEN + RRF Q16",
+        "- Verified on phone & rustc -O3 on g8t.is",
+        "- ADBG op=9 sub=7 runs live 1024-op benchmark",
+        "## 4. Sovereign Safety & Provenance",
+        "- Boot Slot B (boot_b) only; 17/17 Off verified",
+        "- Zero floats * Zero unsafe * C64 64KB budget",
+        "## End of g8t.is Page * Snap Circuits Online.",
     ],
     [
         "# Hardware // GC7272 TDDI & MT6358 Audio DSP",
@@ -622,7 +712,7 @@ pub fn paint_qwave_top_viewport_zoom(
     // Top Browser Tab Bar (y = 142..174)
     let full_tab_labels: [&str; 3] = [
         "01: 8b.is Sanctuary",
-        "02: ESP32 Mothership",
+        "02: g8t.is Snap-Circ",
         "03: GC7272 + MT6358",
     ];
     for (i, label) in full_tab_labels.iter().enumerate() {

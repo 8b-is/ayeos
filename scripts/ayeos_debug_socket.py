@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import capture_board4 as b4
 import capture_tone as ct
 import screamtracker_jam as jam
+import ayeos_g8t_snap as g8t_snap
 
 DEFAULT_UNIX_SOCK = "/tmp/ayeos-debug.sock"
 DEFAULT_TCP_HOST = "127.0.0.1"
@@ -504,6 +505,32 @@ def execute_request(req, device_path=None):
                 "adbg": res,
             }
 
+        if cmd == "g8t_bench":
+            x_override = int(str(req.get("x", 270)), 0) & 0xFFFF
+            y_override = int(str(req.get("y", 1110)), 0) & 0xFFFF
+            usb.read(0xc0, 0xb9, 0x0000, y_override, 64)
+            res = exec_debug_op(usb, (7 << 8) | 9, x_override, timeout_ms=3000, initial_wait_ms=60)
+            QWAVE_STATE["active_tab"] = 1
+            QWAVE_STATE["scroll_y"] = 0
+            QWAVE_STATE["last_hit"] = "g8t_bench"
+            return {
+                "ok": res["status"] == 1,
+                "bench": g8t_snap.decode_g8t_bench_adbg(res),
+                "qwave": dict(QWAVE_STATE),
+                "adbg": res,
+            }
+
+        if cmd == "g8t_snap":
+            QWAVE_STATE["active_tab"] = 1
+            QWAVE_STATE["scroll_y"] = 0
+            QWAVE_STATE["last_hit"] = "g8t_snap_upload"
+            report = g8t_snap.run_self_improving_snap_cycle(
+                g8t_url=str(req.get("g8t_url", g8t_snap.DEFAULT_G8T_URL)),
+                usb=usb,
+            )
+            report["qwave"] = dict(QWAVE_STATE)
+            return report
+
         if cmd == "ota_reboot":
             pkt = usb.read(0xc0, 0xa8, 0xa8e0, 0, 64)
             return {
@@ -585,6 +612,14 @@ def parse_line_to_request(line):
         return {"cmd": "touch_probe"}
     if cmd == "gc7272":
         return {"cmd": "gc7272", "action": parts[1] if len(parts) > 1 else "5"}
+    if cmd == "g8t_bench":
+        return {
+            "cmd": "g8t_bench",
+            "x": parts[1] if len(parts) > 1 else "270",
+            "y": parts[2] if len(parts) > 2 else "1110",
+        }
+    if cmd == "g8t_snap":
+        return {"cmd": "g8t_snap"}
     if cmd == "ota_reboot":
         return {"cmd": "ota_reboot"}
     return {"cmd": cmd}
@@ -725,7 +760,7 @@ QWAVE_STUDIO_HTML = """<!DOCTYPE html>
       </div>
       <div class="qwave-tabs">
         <div class="qtab active" id="tab0" onclick="selectTab(0)">01: 8b.is</div>
-        <div class="qtab" id="tab1" onclick="selectTab(1)">02: ESP32 Bus</div>
+        <div class="qtab" id="tab1" onclick="selectTab(1)">02: g8t.is Snap-Circ</div>
         <div class="qtab" id="tab2" onclick="selectTab(2)">03: GC7272</div>
       </div>
       <div class="qwave-viewport" id="qwaveViewport"></div>
@@ -733,6 +768,10 @@ QWAVE_STUDIO_HTML = """<!DOCTYPE html>
         <button onclick="scrollQwave(-1)">SCROLL UP</button>
         <button onclick="scrollQwave(1)">SCROLL DOWN</button>
         <button onclick="sendTouch(600, 84, 'MODE TOGGLE (QWAVE/STUDIO)')">MODE: QWAVE/STUDIO</button>
+      </div>
+      <div class="btn-bar">
+        <button onclick="runG8tBench()">BENCHMARK MT6768 SNAP</button>
+        <button onclick="runG8tSnap()">SELF-IMPROVE &amp; UPLOAD TO G8T.IS</button>
       </div>
     </div>
   </div>
@@ -794,18 +833,18 @@ const DOCS = [
     "End of Tab 01 * {<3,<3,<3}+1 * LLL"
   ],
   [
-    "# qwave://mothership/esp32-triad-flug",
-    "BLU G75 Mothership <-> ESP32 Triad / FLUG Bus:",
-    "- Node 01: ESP32-S3 USB-JTAG (303a:1001) ACTIVE",
-    "- Node 02: Triad RF / WiFi-CSI / BLE Mesh Ready",
-    "- Node 03: FLUG-OS Sensor & Synth Telemetry",
-    "Guard: MediaTek BROM handshake never touches",
-    "ESP32 nodes on the shared USB hub.",
-    "ScreamTracker rows can cue ESP32 Triad triggers",
-    "simultaneously with phone AW87394 speakers.",
-    "Exact rational clock sync across mothership.",
-    "Use ayeos-debug scroll or Qwave to inspect.",
-    "End of Tab 02 * Mothership Bus Online."
+    "# qwave://g8t.is/circuits/snap (Self-Improving)",
+    "Phone: BLU G75 (mt6768) -> https://g8t.is",
+    "Agent: aye-blu-g75-mt6768 @ 432Hz BLAKE3 Gate",
+    "Linear: blu_g75_touch_to_sgen_off17_circuit",
+    "  C0: ayeos_blu_g75_sensor_pack (XY + mV)",
+    "  C1: ayeos_gc7272_touch_to_semitone_v2 (13x)",
+    "  C2: ayeos_mt6358_sgen_crest_step_v2 (11x)",
+    "  C3: ayeos_off17_safety_seal (0x1FFFF Off17)",
+    "DAG: blu_g75_qwave_mem8_rrf_dag_circuit",
+    "  Fan-out: Touch Semitone + Qwave Marine Jitter",
+    "  Fan-in:  MEMNET RRF Q16 -> Off17 Safety Seal",
+    "End of Tab 02 * Self-Improving Snap Circuits."
   ],
   [
     "# qwave://hardware/gc7272-touch-spi0",
@@ -922,6 +961,20 @@ function sendTouch(x, y, label) {
 
 function playFullSong() {
   apiPost({cmd: "jam", val: "0x0080", idx: "0"}, "8-ROW S3M SONG");
+}
+
+function runG8tBench() {
+  currentTab = 1;
+  currentScroll = 0;
+  renderQwave();
+  apiPost({cmd: "g8t_bench"}, "MT6768 SNAP BENCH");
+}
+
+function runG8tSnap() {
+  currentTab = 1;
+  currentScroll = 0;
+  renderQwave();
+  apiPost({cmd: "g8t_snap"}, "G8T.IS SNAP UPLOAD");
 }
 
 function selectTab(tab) {

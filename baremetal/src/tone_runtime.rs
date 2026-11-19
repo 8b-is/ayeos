@@ -805,6 +805,112 @@ fn tone_debug_exec(
                     }
                 }
             }
+            7 => {
+                // On-device MT6768 ARM64 (13 MHz cntpct_el0) g8t.is Snap-Circuit Benchmark & Verifier:
+                // Benchmarks 4,096 iterations of v1 (loop) vs v2 (closed-form) 4-stage Snap-Circuit
+                // using live GC7272 touch + MT6358 AUXADC battery inputs and proves v1 == v2 on-chip.
+                static mut G8T_SNAP_GEN: u16 = 0;
+                let snap_gen = unsafe {
+                    let next = read_volatile(core::ptr::addr_of!(G8T_SNAP_GEN)).wrapping_add(1);
+                    write_volatile(core::ptr::addr_of_mut!(G8T_SNAP_GEN), next);
+                    next
+                };
+                let tx = if control.touch_last_x != 0 {
+                    control.touch_last_x
+                } else if idx != 0 {
+                    idx & 0x03ff
+                } else {
+                    270
+                };
+                let ty = if control.touch_last_y != 0 {
+                    control.touch_last_y
+                } else {
+                    1110
+                };
+                let touch_xy = ((ty as u64) << 16) | (tx as u64);
+                let mv_u64 = bat_mv as u64;
+
+                let t0: u64;
+                unsafe {
+                    asm!("isb", "mrs {}, cntpct_el0", out(reg) t0, options(nostack, preserves_flags));
+                }
+                let mut acc_v1 = 0u64;
+                for i in 0..4096u64 {
+                    let (_, _, _, s3) = phone_studio::run_blu_g75_snap_circuit(
+                        core::hint::black_box(touch_xy.wrapping_add(i & 7)),
+                        core::hint::black_box(mv_u64),
+                        false,
+                    );
+                    acc_v1 ^= core::hint::black_box(s3);
+                }
+                let t1: u64;
+                unsafe {
+                    asm!("isb", "mrs {}, cntpct_el0", out(reg) t1, options(nostack, preserves_flags));
+                }
+                let mut acc_v2 = 0u64;
+                for i in 0..4096u64 {
+                    let (_, _, _, s3) = phone_studio::run_blu_g75_snap_circuit(
+                        core::hint::black_box(touch_xy.wrapping_add(i & 7)),
+                        core::hint::black_box(mv_u64),
+                        true,
+                    );
+                    acc_v2 ^= core::hint::black_box(s3);
+                }
+                let t2: u64;
+                unsafe {
+                    asm!("isb", "mrs {}, cntpct_el0", out(reg) t2, options(nostack, preserves_flags));
+                }
+
+                let (s0_v1, s1_v1, s2_v1, s3_v1) =
+                    phone_studio::run_blu_g75_snap_circuit(touch_xy, mv_u64, false);
+                let (s0_v2, s1_v2, s2_v2, s3_v2) =
+                    phone_studio::run_blu_g75_snap_circuit(touch_xy, mv_u64, true);
+                let eq_ok = u8::from(
+                    acc_v1 == acc_v2
+                        && s0_v1 == s0_v2
+                        && s1_v1 == s1_v2
+                        && s2_v1 == s2_v2
+                        && s3_v1 == s3_v2,
+                );
+                let v1_ticks = t1.wrapping_sub(t0).min(u32::MAX as u64) as u32;
+                let v2_ticks = t2.wrapping_sub(t1).min(u32::MAX as u64) as u32;
+
+                control.dbg_buf[0..8].copy_from_slice(&s3_v2.to_le_bytes());
+                control.dbg_buf[8..12].copy_from_slice(&v1_ticks.to_le_bytes());
+                control.dbg_buf[12..16].copy_from_slice(&v2_ticks.to_le_bytes());
+                control.dbg_buf[16..18].copy_from_slice(&tx.to_le_bytes());
+                control.dbg_buf[18..20].copy_from_slice(&ty.to_le_bytes());
+                control.dbg_buf[20..22].copy_from_slice(&bat_mv.to_le_bytes());
+                control.dbg_buf[22..24].copy_from_slice(&snap_gen.to_le_bytes());
+                control.dbg_buf[24..32].copy_from_slice(&s0_v2.to_le_bytes());
+
+                if studio_visible && idx != 0 {
+                    *qwave_tab = 1;
+                    *qwave_scroll = 0;
+                    let mut canvas = PhoneCanvas { base, stride };
+                    if *qwave_full_mode {
+                        phone_studio::paint_qwave_top_viewport_zoom(
+                            &mut canvas,
+                            glyph_8x16_hd,
+                            *qwave_scroll,
+                            *qwave_tab,
+                            *qwave_zoom,
+                            bat_mv,
+                        );
+                        flush_dcache_rows(base, stride, 64, 598);
+                    }
+                    phone_studio::paint_qwave_browser(
+                        &mut canvas,
+                        glyph_8x16_hd,
+                        *qwave_scroll,
+                        *qwave_tab,
+                    );
+                    flush_dcache_rows(base, stride, 1176, 152);
+                }
+
+                control.dbg_result = ((snap_gen as u32) << 16) | ((eq_ok as u32) << 8) | 0x68;
+                control.dbg_status = 1;
+            }
             _ => {
                 control.dbg_status = 0xff;
                 control.dbg_result = 0;
